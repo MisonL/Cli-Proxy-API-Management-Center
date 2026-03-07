@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { viteSingleFile } from 'vite-plugin-singlefile';
 import path from 'path';
@@ -74,5 +74,9 @@ export default defineConfig({
         manualChunks: undefined
       }
     }
+  },
+  test: {
+    environment: 'jsdom',
+    css: true,
   }
 });

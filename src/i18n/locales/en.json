@@ -1173,6 +1173,10 @@
           "logging_to_file_desc": "Save logs to files",
           "usage_statistics": "Usage Statistics",
           "usage_statistics_desc": "Collect usage statistics",
+          "usage_persistence": "Usage Persistence",
+          "usage_persistence_desc": "Persist usage snapshots to a file. Disabled by default to keep the original in-memory-only behavior.",
+          "usage_persistence_file": "Snapshot File Path",
+          "usage_persistence_hint": "Set any writable file path. Recommended for Docker: /workspace/usage-backups/usage-statistics.json",
           "logs_max_size": "Log File Size Limit (MB)"
         },
         "network": {
@@ -1272,6 +1276,7 @@
         "validation_blocked": "Fix validation errors before saving",
         "port_range": "Enter a valid port between 1 and 65535",
         "non_negative_integer": "Enter a non-negative whole number",
+        "required_when_enabled": "This field is required when enabled",
         "payload_invalid_number": "Enter a valid number",
         "payload_invalid_boolean": "Choose true or false",
         "payload_invalid_json": "Enter valid JSON"

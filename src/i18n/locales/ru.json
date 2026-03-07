@@ -1176,6 +1176,10 @@
           "logging_to_file_desc": "Сохранять журналы в файлы",
           "usage_statistics": "Статистика использования",
           "usage_statistics_desc": "Собирать статистику использования",
+          "usage_persistence": "Сохранение статистики использования",
+          "usage_persistence_desc": "Сохранять снимки usage в файл. По умолчанию выключено, чтобы сохранить исходное поведение только в памяти.",
+          "usage_persistence_file": "Путь к файлу снимка статистики",
+          "usage_persistence_hint": "Укажите любой путь к доступному для записи файлу. Для Docker рекомендуется /workspace/usage-backups/usage-statistics.json",
           "logs_max_size": "Максимальный размер файла журнала (МБ)",
           "usage_retention_days": "Хранить статистику (дней)",
           "usage_retention_hint": "0 означает без ограничений (без очистки)"
@@ -1277,6 +1281,7 @@
         "validation_blocked": "Исправьте ошибки валидации перед сохранением",
         "port_range": "Введите корректный порт от 1 до 65535",
         "non_negative_integer": "Введите неотрицательное целое число",
+        "required_when_enabled": "Это поле обязательно, когда опция включена",
         "payload_invalid_number": "Введите корректное число",
         "payload_invalid_boolean": "Выберите true или false",
         "payload_invalid_json": "Введите корректный JSON"

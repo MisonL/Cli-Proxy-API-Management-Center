@@ -4,6 +4,9 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { ConfigSection } from '@/components/config/ConfigSection';
+import {
+  DEFAULT_USAGE_PERSISTENCE_FILE,
+} from '@/types/visualConfig';
 import type {
   PayloadFilterRule,
   PayloadParamValidationErrorCode,
@@ -98,6 +101,10 @@ export function VisualConfigEditor({ values, validationErrors, disabled = false,
     values.streaming.nonstreamKeepaliveInterval === '' || values.streaming.nonstreamKeepaliveInterval === '0';
   const portError = getValidationMessage(t, validationErrors?.port);
   const logsMaxSizeError = getValidationMessage(t, validationErrors?.logsMaxTotalSizeMb);
+  const usagePersistenceFileError = getValidationMessage(
+    t,
+    validationErrors?.usagePersistenceFile
+  );
   const requestRetryError = getValidationMessage(t, validationErrors?.requestRetry);
   const maxRetryIntervalError = getValidationMessage(t, validationErrors?.maxRetryInterval);
   const keepaliveError = getValidationMessage(t, validationErrors?.['streaming.keepaliveSeconds']);
@@ -262,6 +269,20 @@ export function VisualConfigEditor({ values, validationErrors, disabled = false,
               disabled={disabled}
               onChange={(usageStatisticsEnabled) => onChange({ usageStatisticsEnabled })}
             />
+            <ToggleRow
+              title={t('config_management.visual.sections.system.usage_persistence')}
+              description={t('config_management.visual.sections.system.usage_persistence_desc')}
+              checked={values.usagePersistenceEnabled}
+              disabled={disabled}
+              onChange={(usagePersistenceEnabled) =>
+                onChange({
+                  usagePersistenceEnabled,
+                  usagePersistenceFile: usagePersistenceEnabled
+                    ? values.usagePersistenceFile.trim() || DEFAULT_USAGE_PERSISTENCE_FILE
+                    : values.usagePersistenceFile,
+                })
+              }
+            />
           </SectionGrid>
 
           <SectionGrid>
@@ -274,6 +295,17 @@ export function VisualConfigEditor({ values, validationErrors, disabled = false,
               disabled={disabled}
               error={logsMaxSizeError}
             />
+            {values.usagePersistenceEnabled && (
+              <Input
+                label={t('config_management.visual.sections.system.usage_persistence_file')}
+                placeholder={DEFAULT_USAGE_PERSISTENCE_FILE}
+                value={values.usagePersistenceFile}
+                onChange={(e) => onChange({ usagePersistenceFile: e.target.value })}
+                disabled={disabled}
+                hint={t('config_management.visual.sections.system.usage_persistence_hint')}
+                error={usagePersistenceFileError}
+              />
+            )}
           </SectionGrid>
         </div>
       </ConfigSection>

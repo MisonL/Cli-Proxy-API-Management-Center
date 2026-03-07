@@ -9,7 +9,10 @@ import type {
   VisualConfigValidationErrors,
   PayloadParamValidationErrorCode,
 } from '@/types/visualConfig';
-import { DEFAULT_VISUAL_VALUES } from '@/types/visualConfig';
+import {
+  DEFAULT_USAGE_PERSISTENCE_FILE,
+  DEFAULT_VISUAL_VALUES,
+} from '@/types/visualConfig';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -213,12 +216,24 @@ function getPortError(value: string): 'port_range' | undefined {
   return parsed >= 1 && parsed <= 65535 ? undefined : 'port_range';
 }
 
+function getRequiredWhenEnabledError(
+  enabled: boolean,
+  value: string
+): 'required_when_enabled' | undefined {
+  if (!enabled) return undefined;
+  return value.trim() ? undefined : 'required_when_enabled';
+}
+
 export function getVisualConfigValidationErrors(
   values: VisualConfigValues
 ): VisualConfigValidationErrors {
   return {
     port: getPortError(values.port),
     logsMaxTotalSizeMb: getNonNegativeIntegerError(values.logsMaxTotalSizeMb),
+    usagePersistenceFile: getRequiredWhenEnabledError(
+      values.usagePersistenceEnabled,
+      values.usagePersistenceFile
+    ),
     requestRetry: getNonNegativeIntegerError(values.requestRetry),
     maxRetryInterval: getNonNegativeIntegerError(values.maxRetryInterval),
     'streaming.keepaliveSeconds': getNonNegativeIntegerError(values.streaming.keepaliveSeconds),
@@ -500,6 +515,14 @@ export function useVisualConfig() {
         loggingToFile: Boolean(parsed['logging-to-file']),
         logsMaxTotalSizeMb: String(parsed['logs-max-total-size-mb'] ?? ''),
         usageStatisticsEnabled: Boolean(parsed['usage-statistics-enabled']),
+        usagePersistenceEnabled:
+          typeof parsed['usage-persistence-file'] === 'string'
+            ? parsed['usage-persistence-file'].trim().length > 0
+            : false,
+        usagePersistenceFile:
+          typeof parsed['usage-persistence-file'] === 'string'
+            ? parsed['usage-persistence-file']
+            : '',
 
         proxyUrl: typeof parsed['proxy-url'] === 'string' ? parsed['proxy-url'] : '',
         forceModelPrefix: Boolean(parsed['force-model-prefix']),
@@ -632,6 +655,14 @@ export function useVisualConfig() {
         setBooleanInDoc(doc, ['logging-to-file'], values.loggingToFile);
         setIntFromStringInDoc(doc, ['logs-max-total-size-mb'], values.logsMaxTotalSizeMb);
         setBooleanInDoc(doc, ['usage-statistics-enabled'], values.usageStatisticsEnabled);
+        if (values.usagePersistenceEnabled) {
+          doc.setIn(
+            ['usage-persistence-file'],
+            values.usagePersistenceFile || DEFAULT_USAGE_PERSISTENCE_FILE
+          );
+        } else if (docHas(doc, ['usage-persistence-file'])) {
+          doc.deleteIn(['usage-persistence-file']);
+        }
 
         setStringInDoc(doc, ['proxy-url'], values.proxyUrl);
         setBooleanInDoc(doc, ['force-model-prefix'], values.forceModelPrefix);

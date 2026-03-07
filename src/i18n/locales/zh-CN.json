@@ -1173,6 +1173,10 @@
           "logging_to_file_desc": "将日志保存到文件",
           "usage_statistics": "使用统计",
           "usage_statistics_desc": "收集使用统计信息",
+          "usage_persistence": "使用统计持久化",
+          "usage_persistence_desc": "将使用统计快照写入文件，默认关闭以保持原版仅内存行为",
+          "usage_persistence_file": "统计快照文件路径",
+          "usage_persistence_hint": "填写可写文件路径。Docker 部署推荐 /workspace/usage-backups/usage-statistics.json",
           "logs_max_size": "日志文件大小限制 (MB)"
         },
         "network": {
@@ -1272,6 +1276,7 @@
         "validation_blocked": "请先修复表单校验错误再保存",
         "port_range": "请输入 1 到 65535 之间的有效端口",
         "non_negative_integer": "请输入非负整数",
+        "required_when_enabled": "启用后此项不能为空",
         "payload_invalid_number": "请输入有效数字",
         "payload_invalid_boolean": "请选择 true 或 false",
         "payload_invalid_json": "请输入有效的 JSON"

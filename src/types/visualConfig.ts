@@ -7,13 +7,17 @@ export type PayloadParamValidationErrorCode =
 export type VisualConfigFieldPath =
   | 'port'
   | 'logsMaxTotalSizeMb'
+  | 'usagePersistenceFile'
   | 'requestRetry'
   | 'maxRetryInterval'
   | 'streaming.keepaliveSeconds'
   | 'streaming.bootstrapRetries'
   | 'streaming.nonstreamKeepaliveInterval';
 
-export type VisualConfigValidationErrorCode = 'port_range' | 'non_negative_integer';
+export type VisualConfigValidationErrorCode =
+  | 'port_range'
+  | 'non_negative_integer'
+  | 'required_when_enabled';
 
 export type VisualConfigValidationErrors = Partial<
   Record<VisualConfigFieldPath, VisualConfigValidationErrorCode>
@@ -50,6 +54,8 @@ export interface StreamingConfig {
   nonstreamKeepaliveInterval: string;
 }
 
+export const DEFAULT_USAGE_PERSISTENCE_FILE = '/workspace/usage-backups/usage-statistics.json';
+
 export type VisualConfigValues = {
   host: string;
   port: string;
@@ -67,6 +73,8 @@ export type VisualConfigValues = {
   loggingToFile: boolean;
   logsMaxTotalSizeMb: string;
   usageStatisticsEnabled: boolean;
+  usagePersistenceEnabled: boolean;
+  usagePersistenceFile: string;
   proxyUrl: string;
   forceModelPrefix: boolean;
   requestRetry: string;
@@ -103,6 +111,8 @@ export const DEFAULT_VISUAL_VALUES: VisualConfigValues = {
   loggingToFile: false,
   logsMaxTotalSizeMb: '',
   usageStatisticsEnabled: false,
+  usagePersistenceEnabled: false,
+  usagePersistenceFile: '',
   proxyUrl: '',
   forceModelPrefix: false,
   requestRetry: '',
