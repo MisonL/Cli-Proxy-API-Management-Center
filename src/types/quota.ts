@@ -160,6 +160,8 @@ export interface ClaudeQuotaWindow {
   labelKey?: string;
   usedPercent: number | null;
   resetLabel: string;
+  resetAt?: string;
+  windowHours?: number | null;
 }
 
 export interface ClaudeQuotaState {
@@ -178,6 +180,7 @@ export interface AntigravityQuotaGroup {
   models: string[];
   remainingFraction: number;
   resetTime?: string;
+  windowHours?: number | null;
 }
 
 export interface AntigravityQuotaState {
@@ -193,6 +196,7 @@ export interface GeminiCliQuotaBucketState {
   remainingFraction: number | null;
   remainingAmount: number | null;
   resetTime: string | undefined;
+  windowHours?: number | null;
   tokenType: string | null;
   modelIds?: string[];
 }
@@ -211,6 +215,8 @@ export interface CodexQuotaWindow {
   labelParams?: Record<string, string | number>;
   usedPercent: number | null;
   resetLabel: string;
+  resetAt?: string;
+  windowHours?: number | null;
 }
 
 export interface CodexQuotaState {
@@ -273,6 +279,8 @@ export interface KimiQuotaRow {
   used: number;
   limit: number;
   resetHint?: string;
+  resetAt?: string;
+  windowHours?: number | null;
 }
 
 export interface KimiQuotaState {

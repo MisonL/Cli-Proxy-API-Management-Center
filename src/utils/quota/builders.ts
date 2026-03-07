@@ -131,6 +131,7 @@ export function buildGeminiCliQuotaBuckets(
         remainingFraction,
         remainingAmount,
         resetTime,
+        windowHours: 24,
         tokenType: bucket.tokenType,
         modelIds: uniqueModelIds,
       };
@@ -224,6 +225,7 @@ export function buildAntigravityQuotaGroups(
       models: quotaEntries.map((entry) => entry.id),
       remainingFraction,
       resetTime,
+      windowHours: 24,
     };
   };
 
@@ -354,8 +356,9 @@ function kimiLimitLabel(
 
 function toKimiUsageRow(
   data: Record<string, unknown>,
-  fallbackLabel: KimiRowLabel
-): (KimiRowLabel & { used: number; limit: number; resetHint?: string }) | null {
+  fallbackLabel: KimiRowLabel,
+  fallbackWindowHours?: number
+): (KimiRowLabel & { used: number; limit: number; resetHint?: string; resetAt?: string; windowHours?: number | null }) | null {
   const limit = toInt(data.limit);
   let used = toInt(data.used);
   if (used === null) {
@@ -369,11 +372,19 @@ function toKimiUsageRow(
     (typeof data.name === 'string' && data.name.trim()) ||
     (typeof data.title === 'string' && data.title.trim());
   const label = explicitLabel ? { label: explicitLabel } : fallbackLabel;
+  const resetAt =
+    (typeof data.reset_at === 'string' && data.reset_at.trim()) ||
+    (typeof data.resetAt === 'string' && data.resetAt.trim()) ||
+    (typeof data.reset_time === 'string' && data.reset_time.trim()) ||
+    (typeof data.resetTime === 'string' && data.resetTime.trim()) ||
+    undefined;
   return {
     ...label,
     used: used ?? 0,
     limit: limit ?? 0,
     resetHint: kimiResetHint(data),
+    resetAt,
+    windowHours: fallbackWindowHours ?? null,
   };
 }
 
@@ -384,7 +395,7 @@ export function buildKimiQuotaRows(payload: KimiUsagePayload): KimiQuotaRow[] {
   if (usage && typeof usage === 'object') {
     const summary = toKimiUsageRow(usage as Record<string, unknown>, {
       labelKey: 'kimi_quota.weekly_limit',
-    });
+    }, 24 * 7);
     if (summary) {
       rows.push({ id: 'summary', ...summary });
     }
@@ -396,7 +407,23 @@ export function buildKimiQuotaRows(payload: KimiUsagePayload): KimiQuotaRow[] {
       const detail = (item.detail && typeof item.detail === 'object' ? item.detail : item) as KimiUsageDetail | KimiLimitItem;
       const window = (item.window && typeof item.window === 'object' ? item.window : {}) as KimiLimitWindow;
       const fallbackLabel = kimiLimitLabel(item, detail, window, idx);
-      const row = toKimiUsageRow(detail as Record<string, unknown>, fallbackLabel);
+      const duration =
+        toInt(window.duration) ??
+        toInt((item as Record<string, unknown>).duration) ??
+        toInt((detail as Record<string, unknown>).duration);
+      const rawTimeUnit =
+        (window as Record<string, unknown>).timeUnit ??
+        (item as Record<string, unknown>).timeUnit ??
+        (detail as Record<string, unknown>).timeUnit;
+      let windowHours: number | undefined;
+      if (duration !== null && duration > 0) {
+        const unit = typeof rawTimeUnit === 'string' ? rawTimeUnit.trim().toUpperCase() : '';
+        if (unit === 'MINUTES') windowHours = duration / 60;
+        else if (unit === 'HOURS') windowHours = duration;
+        else if (unit === 'DAYS') windowHours = duration * 24;
+        else windowHours = duration / 3600;
+      }
+      const row = toKimiUsageRow(detail as Record<string, unknown>, fallbackLabel, windowHours);
       if (row) {
         rows.push({ id: `limit-${idx}`, ...row });
       }

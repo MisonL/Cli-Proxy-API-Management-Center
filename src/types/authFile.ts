@@ -28,6 +28,10 @@ export interface AuthFileItem {
   unavailable?: boolean;
   status?: string;
   statusMessage?: string;
+  quotaExceeded?: boolean;
+  quotaReason?: string;
+  quotaNextRecoverAt?: string | number;
+  quotaBackoffLevel?: number;
   lastRefresh?: string | number;
   modified?: number;
   [key: string]: unknown;

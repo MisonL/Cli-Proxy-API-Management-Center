@@ -23,6 +23,30 @@ interface LoadQuotaResult<TData> {
   errorStatus?: number;
 }
 
+const MAX_CONCURRENT_QUOTA_REQUESTS = 12;
+
+async function mapWithConcurrency<TInput, TOutput>(
+  items: TInput[],
+  concurrency: number,
+  mapper: (item: TInput) => Promise<TOutput>
+): Promise<TOutput[]> {
+  const results = new Array<TOutput>(items.length);
+  let nextIndex = 0;
+
+  const worker = async () => {
+    while (true) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      if (currentIndex >= items.length) return;
+      results[currentIndex] = await mapper(items[currentIndex]);
+    }
+  };
+
+  const workerCount = Math.min(Math.max(concurrency, 1), items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
 export function useQuotaLoader<TState, TData>(config: QuotaConfig<TState, TData>) {
   const { t } = useTranslation();
   const quota = useQuotaStore(config.storeSelector);
@@ -55,8 +79,10 @@ export function useQuotaLoader<TState, TData>(config: QuotaConfig<TState, TData>
           return nextState;
         });
 
-        const results = await Promise.all(
-          targets.map(async (file): Promise<LoadQuotaResult<TData>> => {
+        const results = await mapWithConcurrency(
+          targets,
+          MAX_CONCURRENT_QUOTA_REQUESTS,
+          async (file): Promise<LoadQuotaResult<TData>> => {
             try {
               const data = await config.fetchQuota(file, t);
               return { name: file.name, status: 'success', data };
@@ -65,7 +91,7 @@ export function useQuotaLoader<TState, TData>(config: QuotaConfig<TState, TData>
               const errorStatus = getStatusFromError(err);
               return { name: file.name, status: 'error', error: message, errorStatus };
             }
-          })
+          }
         );
 
         if (requestId !== requestIdRef.current) return;

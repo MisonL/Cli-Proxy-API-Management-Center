@@ -10,12 +10,14 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { triggerHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useQuotaStore, useThemeStore } from '@/stores';
 import type { AuthFileItem, ResolvedTheme } from '@/types';
+import type { UsageDetail } from '@/utils/usage';
 import { QuotaCard } from './QuotaCard';
 import type { QuotaStatusState } from './QuotaCard';
 import { useQuotaLoader } from './useQuotaLoader';
 import type { QuotaConfig } from './quotaConfigs';
 import { useGridColumns } from './useGridColumns';
 import { IconRefreshCw } from '@/components/ui/icons';
+import { QuotaAnalyticsView } from './QuotaAnalyticsView';
 import styles from '@/pages/QuotaPage.module.scss';
 
 type QuotaUpdater<T> = T | ((prev: T) => T);
@@ -95,13 +97,17 @@ interface QuotaSectionProps<TState extends QuotaStatusState, TData> {
   files: AuthFileItem[];
   loading: boolean;
   disabled: boolean;
+  usageDetails: UsageDetail[];
+  usageLoading?: boolean;
 }
 
 export function QuotaSection<TState extends QuotaStatusState, TData>({
   config,
   files,
   loading,
-  disabled
+  disabled,
+  usageDetails,
+  usageLoading = false,
 }: QuotaSectionProps<TState, TData>) {
   const { t } = useTranslation();
   const resolvedTheme: ResolvedTheme = useThemeStore((state) => state.resolvedTheme);
@@ -109,9 +115,9 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
     Record<string, TState>
   >;
 
-  /* Removed useRef */
   const [columns, gridRef] = useGridColumns(380); // Min card width 380px matches SCSS
   const [viewMode, setViewMode] = useState<ViewMode>('paged');
+  const [displayMode, setDisplayMode] = useState<'cards' | 'analytics'>('cards');
   const [showTooManyWarning, setShowTooManyWarning] = useState(false);
 
   const filteredFiles = useMemo(() => files.filter((file) => config.filterFn(file)), [
@@ -161,6 +167,16 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
 
   const { quota, loadQuota } = useQuotaLoader(config);
 
+  const analyticsNeedsQuota = useMemo(
+    () =>
+      displayMode === 'analytics' &&
+      filteredFiles.some((file) => {
+        const state = quota[file.name];
+        return !state || state.status === 'idle';
+      }),
+    [displayMode, filteredFiles, quota]
+  );
+
   const pendingQuotaRefreshRef = useRef(false);
   const prevFilesLoadingRef = useRef(loading);
 
@@ -178,11 +194,17 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
     if (!wasLoading) return;
 
     pendingQuotaRefreshRef.current = false;
-    const scope = effectiveViewMode === 'all' ? 'all' : 'page';
-    const targets = effectiveViewMode === 'all' ? filteredFiles : pageItems;
+    const analyticsMode = displayMode === 'analytics';
+    const scope = analyticsMode || effectiveViewMode === 'all' ? 'all' : 'page';
+    const targets = analyticsMode || effectiveViewMode === 'all' ? filteredFiles : pageItems;
     if (targets.length === 0) return;
     loadQuota(targets, scope, setLoading);
-  }, [loading, effectiveViewMode, filteredFiles, pageItems, loadQuota, setLoading]);
+  }, [loading, displayMode, effectiveViewMode, filteredFiles, pageItems, loadQuota, setLoading]);
+
+  useEffect(() => {
+    if (!analyticsNeedsQuota || loading || sectionLoading) return;
+    void loadQuota(filteredFiles, 'all', setLoading);
+  }, [analyticsNeedsQuota, filteredFiles, loadQuota, loading, sectionLoading, setLoading]);
 
   useEffect(() => {
     if (loading) return;
@@ -222,26 +244,44 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
         <div className={styles.headerActions}>
           <div className={styles.viewModeToggle}>
             <Button
-              variant={effectiveViewMode === 'paged' ? 'primary' : 'secondary'}
+              variant={displayMode === 'cards' ? 'primary' : 'secondary'}
               size="sm"
-              onClick={() => setViewMode('paged')}
+              onClick={() => setDisplayMode('cards')}
             >
-              {t('auth_files.view_mode_paged')}
+              {t('quota_management.analytics.cards_view')}
             </Button>
             <Button
-              variant={effectiveViewMode === 'all' ? 'primary' : 'secondary'}
+              variant={displayMode === 'analytics' ? 'primary' : 'secondary'}
               size="sm"
-              onClick={() => {
-                if (filteredFiles.length > MAX_SHOW_ALL_THRESHOLD) {
-                  setShowTooManyWarning(true);
-                } else {
-                  setViewMode('all');
-                }
-              }}
+              onClick={() => setDisplayMode('analytics')}
             >
-              {t('auth_files.view_mode_all')}
+              {t('quota_management.analytics.stats_view')}
             </Button>
           </div>
+          {displayMode === 'cards' && (
+            <div className={styles.viewModeToggle}>
+              <Button
+                variant={effectiveViewMode === 'paged' ? 'primary' : 'secondary'}
+                size="sm"
+                onClick={() => setViewMode('paged')}
+              >
+                {t('auth_files.view_mode_paged')}
+              </Button>
+              <Button
+                variant={effectiveViewMode === 'all' ? 'primary' : 'secondary'}
+                size="sm"
+                onClick={() => {
+                  if (filteredFiles.length > MAX_SHOW_ALL_THRESHOLD) {
+                    setShowTooManyWarning(true);
+                  } else {
+                    setViewMode('all');
+                  }
+                }}
+              >
+                {t('auth_files.view_mode_all')}
+              </Button>
+            </div>
+          )}
           <Button
             variant="secondary"
             size="sm"
@@ -260,6 +300,15 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
         <EmptyState
           title={t(`${config.i18nPrefix}.empty_title`)}
           description={t(`${config.i18nPrefix}.empty_desc`)}
+        />
+      ) : displayMode === 'analytics' ? (
+        <QuotaAnalyticsView
+          providerKey={config.type}
+          providerLabel={t(`${config.i18nPrefix}.title`)}
+          files={filteredFiles}
+          usageDetails={usageDetails}
+          quotaMap={quota as unknown as Record<string, unknown>}
+          loading={isRefreshing || usageLoading}
         />
       ) : (
         <>

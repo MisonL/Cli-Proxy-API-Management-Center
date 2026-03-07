@@ -405,3 +405,276 @@
     line-height: 1.6;
   }
 }
+
+.analyticsOnlyBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  min-height: 32px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.analyticsShell {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.95fr);
+  gap: $spacing-lg;
+
+  @include mobile {
+    grid-template-columns: 1fr;
+  }
+}
+
+.analyticsChartPane,
+.analyticsSummaryPane {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+}
+
+.analyticsChartPane {
+  padding: $spacing-md;
+  border: 1px solid var(--border-color);
+  border-radius: $radius-lg;
+  background:
+    linear-gradient(180deg, rgba(139, 134, 128, 0.08), transparent 46%),
+    var(--bg-secondary);
+}
+
+.analyticsPaneHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: $spacing-md;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.analyticsEyebrow {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+}
+
+.analyticsTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.analyticsNote {
+  max-width: 320px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  border-radius: $radius-md;
+  background: rgba(139, 134, 128, 0.08);
+  border: 1px dashed rgba(139, 134, 128, 0.28);
+}
+
+.analyticsLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.analyticsLegendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+}
+
+.analyticsLegendDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.analyticsLegendText {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.analyticsChartCanvas {
+  position: relative;
+  min-height: 360px;
+
+  @include mobile {
+    min-height: 300px;
+  }
+}
+
+.analyticsHint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+  border-radius: $radius-lg;
+  border: 1px dashed var(--border-color);
+  background: rgba(139, 134, 128, 0.04);
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: center;
+  padding: $spacing-lg;
+}
+
+.analyticsHealthGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: $spacing-md;
+
+  @include mobile {
+    grid-template-columns: 1fr;
+  }
+}
+
+.analyticsHealthCard {
+  position: relative;
+  overflow: hidden;
+  padding: $spacing-md $spacing-lg;
+  border-radius: $radius-lg;
+  border: 1px solid var(--border-color);
+  background:
+    radial-gradient(circle at top right, rgba(198, 87, 70, 0.1), transparent 42%),
+    var(--bg-primary);
+  box-shadow: $shadow-sm;
+}
+
+.analyticsMetricLabel {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.analyticsMetricValue {
+  font-size: 30px;
+  line-height: 1;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.analyticsMetricMeta {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.analyticsMetricHealthy {
+  color: $success-color;
+}
+
+.analyticsMetricWarning {
+  color: $warning-color;
+}
+
+.analyticsMetricDanger {
+  color: $error-color;
+}
+
+.analyticsMetricNeutral {
+  color: var(--text-primary);
+}
+
+.analyticsMetaGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: $spacing-sm;
+}
+
+.analyticsMetaCard {
+  padding: 12px;
+  border-radius: $radius-md;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.analyticsMetaLabel {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.analyticsMetaValue {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.analyticsWindowGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: $spacing-sm;
+
+  @include mobile {
+    grid-template-columns: 1fr;
+  }
+}
+
+.analyticsWindowCard {
+  padding: $spacing-md;
+  border-radius: $radius-lg;
+  border: 1px solid var(--border-color);
+  background:
+    linear-gradient(180deg, rgba(37, 99, 235, 0.06), transparent 42%),
+    var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.analyticsWindowHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: $spacing-sm;
+}
+
+.analyticsWindowLabel {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.analyticsWindowShare {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.analyticsWindowPrimary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-sm;
+  font-size: 12px;
+  color: var(--text-secondary);
+
+  strong {
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 700;
+  }
+}
+
+.analyticsWindowMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}

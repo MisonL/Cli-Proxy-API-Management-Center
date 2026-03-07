@@ -79,6 +79,31 @@ type QuotaType = 'antigravity' | 'claude' | 'codex' | 'gemini-cli' | 'kimi';
 
 const DEFAULT_ANTIGRAVITY_PROJECT_ID = 'bamboo-precept-lgxtn';
 
+const normalizeResetAt = (value: unknown): string | undefined => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric)) {
+      const ms = numeric < 1e12 ? numeric * 1000 : numeric;
+      return new Date(ms).toISOString();
+    }
+    const parsed = Date.parse(trimmed);
+    return Number.isNaN(parsed) ? trimmed : new Date(parsed).toISOString();
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const ms = value < 1e12 ? value * 1000 : value;
+    return new Date(ms).toISOString();
+  }
+  return undefined;
+};
+
+const windowHoursFromSeconds = (value: unknown): number | null => {
+  const seconds = normalizeNumberValue(value);
+  if (seconds === null || seconds <= 0) return null;
+  return seconds / 3600;
+};
+
 export interface QuotaStore {
   antigravityQuota: Record<string, AntigravityQuotaState>;
   claudeQuota: Record<string, ClaudeQuotaState>;
@@ -243,6 +268,13 @@ const buildCodexQuotaWindows = (payload: CodexUsagePayload, t: TFunction): Codex
     const usedPercentRaw = normalizeNumberValue(window.used_percent ?? window.usedPercent);
     const isLimitReached = Boolean(limitReached) || allowed === false;
     const usedPercent = usedPercentRaw ?? (isLimitReached && resetLabel !== '-' ? 100 : null);
+    const resetAt =
+      normalizeResetAt(window.reset_at ?? window.resetAt) ??
+      (() => {
+        const resetAfterSeconds = normalizeNumberValue(window.reset_after_seconds ?? window.resetAfterSeconds);
+        if (resetAfterSeconds === null) return undefined;
+        return new Date(Date.now() + resetAfterSeconds * 1000).toISOString();
+      })();
     windows.push({
       id,
       label,
@@ -250,6 +282,8 @@ const buildCodexQuotaWindows = (payload: CodexUsagePayload, t: TFunction): Codex
       labelParams,
       usedPercent,
       resetLabel,
+      resetAt,
+      windowHours: windowHoursFromSeconds(window.limit_window_seconds ?? window.limitWindowSeconds),
     });
   };
 
@@ -656,6 +690,15 @@ const buildClaudeQuotaWindows = (
   t: TFunction
 ): ClaudeQuotaWindow[] => {
   const windows: ClaudeQuotaWindow[] = [];
+  const windowHoursByKey: Partial<Record<(typeof CLAUDE_USAGE_WINDOW_KEYS)[number]['key'], number>> = {
+    five_hour: 5,
+    seven_day: 24 * 7,
+    seven_day_oauth_apps: 24 * 7,
+    seven_day_opus: 24 * 7,
+    seven_day_sonnet: 24 * 7,
+    seven_day_cowork: 24 * 7,
+    iguana_necktie: 24 * 7,
+  };
 
   for (const { key, id, labelKey } of CLAUDE_USAGE_WINDOW_KEYS) {
     const window = payload[key as keyof ClaudeUsagePayload];
@@ -669,6 +712,8 @@ const buildClaudeQuotaWindows = (
       labelKey,
       usedPercent,
       resetLabel,
+      resetAt: normalizeResetAt(typedWindow.resets_at),
+      windowHours: windowHoursByKey[key] ?? null,
     });
   }
 

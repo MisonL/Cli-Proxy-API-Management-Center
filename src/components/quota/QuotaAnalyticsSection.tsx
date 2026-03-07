@@ -1,0 +1,81 @@
+import { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { IconRefreshCw } from '@/components/ui/icons';
+import { triggerHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import type { AuthFileItem } from '@/types/authFile';
+import type { UsageDetail } from '@/utils/usage';
+import { QuotaAnalyticsView } from './QuotaAnalyticsView';
+import styles from '@/pages/QuotaPage.module.scss';
+
+interface QuotaAnalyticsSectionProps {
+  providerKey: string;
+  providerLabel: string;
+  files: AuthFileItem[];
+  usageDetails: UsageDetail[];
+  loading: boolean;
+  disabled: boolean;
+}
+
+export function QuotaAnalyticsSection({
+  providerKey,
+  providerLabel,
+  files,
+  usageDetails,
+  loading,
+  disabled,
+}: QuotaAnalyticsSectionProps) {
+  const { t } = useTranslation();
+
+  const handleRefresh = useCallback(() => {
+    void triggerHeaderRefresh();
+  }, []);
+
+  const titleNode = (
+    <div className={styles.titleWrapper}>
+      <span>{providerLabel}</span>
+      {files.length > 0 && <span className={styles.countBadge}>{files.length}</span>}
+    </div>
+  );
+
+  return (
+    <Card
+      title={titleNode}
+      extra={
+        <div className={styles.headerActions}>
+          <div className={styles.analyticsOnlyBadge}>
+            {t('quota_management.analytics.usage_only_badge')}
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={disabled || loading}
+            loading={loading}
+            title={t('quota_management.refresh_files_and_quota')}
+            aria-label={t('quota_management.refresh_files_and_quota')}
+          >
+            {!loading && <IconRefreshCw size={16} />}
+          </Button>
+        </div>
+      }
+    >
+      {files.length === 0 ? (
+        <EmptyState
+          title={t('quota_management.analytics.empty_title')}
+          description={t('quota_management.analytics.empty_desc')}
+        />
+      ) : (
+        <QuotaAnalyticsView
+          providerKey={providerKey}
+          providerLabel={providerLabel}
+          files={files}
+          usageDetails={usageDetails}
+          loading={loading}
+        />
+      )}
+    </Card>
+  );
+}
