@@ -494,6 +494,13 @@
   border-radius: 999px;
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: opacity $transition-fast, border-color $transition-fast, transform $transition-fast;
+
+  &:hover {
+    border-color: rgba(37, 99, 235, 0.25);
+    transform: translateY(-1px);
+  }
 }
 
 .analyticsLegendDot {
@@ -507,6 +514,10 @@
   font-size: 12px;
   color: var(--text-secondary);
   white-space: nowrap;
+}
+
+.analyticsLegendItemMuted {
+  opacity: 0.48;
 }
 
 .analyticsChartCanvas {

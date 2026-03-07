@@ -1305,6 +1305,7 @@
       "empty_desc": "导入对应类型的认证文件后，这里会显示号池统计。",
       "histogram_title": "号池额度分布",
       "legend_label": "额度分布图例",
+      "legend_toggle": "点击筛选该额度序列",
       "credentials_suffix": "个凭证",
       "usage_only_histogram_hint": "当前渠道暂无真实额度快照，左侧不展示额度分布图。",
       "no_histogram": "暂无可用于绘制分布图的额度数据。",

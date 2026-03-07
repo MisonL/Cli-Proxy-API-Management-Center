@@ -1305,6 +1305,7 @@
       "empty_desc": "Import credentials of this type and pool analytics will appear here.",
       "histogram_title": "Credential Pool Distribution",
       "legend_label": "Distribution legend",
+      "legend_toggle": "Click to filter this quota series",
       "credentials_suffix": "credentials",
       "usage_only_histogram_hint": "This provider has no live quota snapshot, so the histogram is hidden.",
       "no_histogram": "No quota data is available for the distribution chart.",

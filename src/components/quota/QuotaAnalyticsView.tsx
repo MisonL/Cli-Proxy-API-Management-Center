@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   BarElement,
   CategoryScale,
@@ -73,19 +73,43 @@ export function QuotaAnalyticsView({
     [files, providerKey, quotaMap, t, usageDetails]
   );
 
+  const [hiddenDatasetIds, setHiddenDatasetIds] = useState<string[]>([]);
+
+  const visibleDatasets = useMemo(() => {
+    const hiddenSet = new Set(hiddenDatasetIds);
+    const datasets = analytics.histogramDatasets.filter((dataset) => !hiddenSet.has(dataset.id));
+    return datasets.length > 0 ? datasets : analytics.histogramDatasets;
+  }, [analytics.histogramDatasets, hiddenDatasetIds]);
+
+  const toggleDatasetVisibility = (datasetId: string) => {
+    setHiddenDatasetIds((prev) => {
+      if (prev.includes(datasetId)) {
+        return prev.filter((id) => id !== datasetId);
+      }
+      if (prev.length >= analytics.histogramDatasets.length - 1) {
+        return prev;
+      }
+      return [...prev, datasetId];
+    });
+  };
+
   const chartData = useMemo<ChartData<'bar'>>(
     () => ({
       labels: analytics.histogramLabels,
-      datasets: analytics.histogramDatasets.map((dataset) => ({
+      datasets: visibleDatasets.map((dataset) => ({
         label: dataset.label,
         data: dataset.counts,
         backgroundColor: dataset.color,
+        borderColor: dataset.color,
+        borderWidth: 1,
         borderRadius: 999,
         borderSkipped: false,
-        maxBarThickness: 16,
+        maxBarThickness: 12,
+        categoryPercentage: 0.72,
+        barPercentage: 0.82,
       })),
     }),
-    [analytics.histogramDatasets, analytics.histogramLabels]
+    [analytics.histogramLabels, visibleDatasets]
   );
 
   const chartOptions = useMemo<ChartOptions<'bar'>>(
@@ -150,7 +174,16 @@ export function QuotaAnalyticsView({
           <>
             <div className={styles.analyticsLegend} aria-label={t('quota_management.analytics.legend_label')}>
               {analytics.histogramDatasets.map((dataset) => (
-                <div key={dataset.id} className={styles.analyticsLegendItem}>
+                <button
+                  key={dataset.id}
+                  type="button"
+                  className={`${styles.analyticsLegendItem} ${
+                    hiddenDatasetIds.includes(dataset.id) ? styles.analyticsLegendItemMuted : ''
+                  }`}
+                  onClick={() => toggleDatasetVisibility(dataset.id)}
+                  aria-pressed={!hiddenDatasetIds.includes(dataset.id)}
+                  title={t('quota_management.analytics.legend_toggle')}
+                >
                   <span
                     className={styles.analyticsLegendDot}
                     style={{ backgroundColor: dataset.color }}
@@ -161,7 +194,7 @@ export function QuotaAnalyticsView({
                       ? ` · ${formatPercent(dataset.averageRemaining)}`
                       : ''}
                   </span>
-                </div>
+                </button>
               ))}
             </div>
             <div className={styles.analyticsChartCanvas}>
