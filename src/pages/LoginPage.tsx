@@ -3,6 +3,8 @@ import { Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { IconEye, IconEyeOff } from '@/components/ui/icons';
 import { useAuthStore, useLanguageStore, useNotificationStore } from '@/stores';
 import { detectApiBaseFromLocation, normalizeApiBase } from '@/utils/connection';
@@ -89,9 +91,16 @@ export function LoginPage() {
   const [error, setError] = useState('');
 
   const detectedBase = useMemo(() => detectApiBaseFromLocation(), []);
+  const languageOptions = useMemo(
+    () =>
+      LANGUAGE_ORDER.map((lang) => ({
+        value: lang,
+        label: t(LANGUAGE_LABEL_KEYS[lang]),
+      })),
+    [t]
+  );
   const handleLanguageChange = useCallback(
-    (event: React.ChangeEvent<HTMLSelectElement>) => {
-      const selectedLanguage = event.target.value;
+    (selectedLanguage: string) => {
       if (!isSupportedLanguage(selectedLanguage)) {
         return;
       }
@@ -205,19 +214,14 @@ export function LoginPage() {
               <div className={styles.loginHeader}>
                 <div className={styles.titleRow}>
                   <div className={styles.title}>{t('title.login')}</div>
-                  <select
+                  <Select
                     className={styles.languageSelect}
                     value={language}
                     onChange={handleLanguageChange}
-                    title={t('language.switch')}
+                    options={languageOptions}
                     aria-label={t('language.switch')}
-                  >
-                    {LANGUAGE_ORDER.map((lang) => (
-                      <option key={lang} value={lang}>
-                        {t(LANGUAGE_LABEL_KEYS[lang])}
-                      </option>
-                    ))}
-                  </select>
+                    fullWidth={false}
+                  />
                 </div>
                 <div className={styles.subtitle}>{t('login.subtitle')}</div>
               </div>
@@ -235,14 +239,13 @@ export function LoginPage() {
                 }}
               >
                 <div className={styles.toggleAdvanced}>
-                  <input
-                    id="custom-connection-toggle"
-                    name="custom-connection-toggle"
-                    type="checkbox"
+                  <ToggleSwitch
                     checked={showCustomBase}
-                    onChange={(e) => setShowCustomBase(e.target.checked)}
+                    onChange={setShowCustomBase}
+                    label={t('login.custom_connection_label')}
+                    ariaLabel={t('login.custom_connection_label')}
+                    labelPosition="right"
                   />
-                  <label htmlFor="custom-connection-toggle">{t('login.custom_connection_label')}</label>
                 </div>
 
                 {showCustomBase && (

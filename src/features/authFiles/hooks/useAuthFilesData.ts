@@ -420,9 +420,10 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
       setFiles((prev) => prev.map((f) => (f.name === name ? { ...f, disabled: nextDisabled } : f)));
 
       try {
-        await authFilesApi.setStatus(name, nextDisabled);
-        await loadFiles();
-        void refreshKeyStats().catch(() => {});
+        const result = await authFilesApi.setStatus(name, nextDisabled);
+        setFiles((prev) =>
+          prev.map((f) => (f.name === name ? { ...f, disabled: result.disabled } : f))
+        );
         showNotification(
           enabled
             ? t('auth_files.status_enabled_success', { name })
@@ -444,7 +445,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
         });
       }
     },
-    [loadFiles, refreshKeyStats, resolveStatusUpdateErrorMessage, showNotification, t]
+    [resolveStatusUpdateErrorMessage, showNotification, t]
   );
 
   const batchSetStatus = useCallback(
@@ -471,18 +472,24 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
       const outcome = collectAuthFilesSettledOutcome(uniqueNames, results, (reason) =>
         resolveStatusUpdateErrorMessage(reason)
       );
-
-      if (outcome.successCount > 0) {
-        await loadFiles();
-        void refreshKeyStats().catch(() => {});
-      } else {
-        setFiles((prev) =>
-          prev.map((file) => {
-            if (!targetNames.has(file.name)) return file;
+      const failedNames = new Set(outcome.failures.map((item) => item.name));
+      const confirmedDisabled = new Map<string, boolean>();
+      results.forEach((result, index) => {
+        if (result.status !== 'fulfilled') return;
+        confirmedDisabled.set(uniqueNames[index], result.value.disabled);
+      });
+      setFiles((prev) =>
+        prev.map((file) => {
+          if (!targetNames.has(file.name)) return file;
+          if (failedNames.has(file.name)) {
             return { ...file, disabled: previousDisabled.get(file.name) === true };
-          })
-        );
-      }
+          }
+          if (confirmedDisabled.has(file.name)) {
+            return { ...file, disabled: confirmedDisabled.get(file.name) === true };
+          }
+          return file;
+        })
+      );
 
       if (outcome.failures.length === 0) {
         showNotification(
@@ -515,9 +522,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
     [
       deselectAll,
       files,
-      loadFiles,
       openActionResult,
-      refreshKeyStats,
       resolveStatusUpdateErrorMessage,
       showNotification,
       t,
