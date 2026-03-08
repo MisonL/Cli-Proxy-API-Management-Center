@@ -1,6 +1,14 @@
 import { DEFAULT_QUOTA_WARNING_THRESHOLDS, type QuotaWarningThresholds } from './quotaAnalytics';
 import { STORAGE_KEY_QUOTA_WARNING_THRESHOLDS } from '@/utils/constants';
 
+const QUOTA_WARNING_THRESHOLD_KEYS: Array<keyof QuotaWarningThresholds> = [
+  'healthLowPercent',
+  'riskDays',
+  'snapshotCoveragePercent',
+  'failureRate24hPercent',
+  'activePoolPercent7d',
+];
+
 const clampThresholdValue = (value: unknown, key: keyof QuotaWarningThresholds): number => {
   const fallback = DEFAULT_QUOTA_WARNING_THRESHOLDS[key];
   const raw = Number(value);
@@ -50,12 +58,36 @@ export const serializeQuotaWarningThresholds = (
   thresholds: normalizeQuotaWarningThresholds(thresholds),
 });
 
-export const parseImportedQuotaWarningThresholds = (value: unknown): QuotaWarningThresholds => {
-  if (!value || typeof value !== 'object') {
-    return DEFAULT_QUOTA_WARNING_THRESHOLDS;
+const parseQuotaWarningThresholdRecord = (value: unknown): Record<string, unknown> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('无效的配额预警阈值文件');
   }
+
   const record = value as Record<string, unknown>;
-  return normalizeQuotaWarningThresholds(record.thresholds ?? record);
+  if (record.version !== undefined && Number(record.version) !== 1) {
+    throw new Error('不支持的配额预警阈值版本');
+  }
+
+  const source = record.thresholds ?? record;
+  if (!source || typeof source !== 'object' || Array.isArray(source)) {
+    throw new Error('无效的配额预警阈值文件');
+  }
+
+  const thresholdRecord = source as Record<string, unknown>;
+  QUOTA_WARNING_THRESHOLD_KEYS.forEach((key) => {
+    if (!(key in thresholdRecord)) {
+      throw new Error(`缺少阈值字段: ${key}`);
+    }
+    if (!Number.isFinite(Number(thresholdRecord[key]))) {
+      throw new Error(`阈值字段无效: ${key}`);
+    }
+  });
+
+  return thresholdRecord;
+};
+
+export const parseImportedQuotaWarningThresholds = (value: unknown): QuotaWarningThresholds => {
+  return normalizeQuotaWarningThresholds(parseQuotaWarningThresholdRecord(value));
 };
 
 export const loadStoredQuotaWarningThresholds = (): QuotaWarningThresholds => {

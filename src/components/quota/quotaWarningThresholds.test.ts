@@ -48,6 +48,29 @@ describe('quotaWarningThresholds', () => {
     expect(loadStoredQuotaWarningThresholds()).toEqual(payload.thresholds);
   });
 
+  it('拒绝导入空对象、缺字段、错误版本和非数字字段', () => {
+    expect(() => parseImportedQuotaWarningThresholds({})).toThrow();
+    expect(() =>
+      parseImportedQuotaWarningThresholds({
+        healthLowPercent: 55,
+        riskDays: 4,
+        snapshotCoveragePercent: 35,
+      })
+    ).toThrow();
+    expect(() =>
+      parseImportedQuotaWarningThresholds({
+        version: 2,
+        thresholds: DEFAULT_QUOTA_WARNING_THRESHOLDS,
+      })
+    ).toThrow();
+    expect(() =>
+      parseImportedQuotaWarningThresholds({
+        ...DEFAULT_QUOTA_WARNING_THRESHOLDS,
+        riskDays: 'oops',
+      })
+    ).toThrow();
+  });
+
   it('仅更新指定阈值字段', () => {
     expect(updateQuotaWarningThreshold(DEFAULT_QUOTA_WARNING_THRESHOLDS, 'riskDays', 999)).toEqual({
       ...DEFAULT_QUOTA_WARNING_THRESHOLDS,

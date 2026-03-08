@@ -122,6 +122,17 @@ The UI language is automatically detected from browser settings and can be manua
 - Tagging `vX.Y.Z` triggers `.github/workflows/release.yml` to publish `dist/management.html`.
 - The UI version shown in the footer is injected at build time (env `VERSION`, git tag, or `package.json` fallback).
 
+## Fork versioning
+
+For this fork, formal UI releases use `v<upstream>-mf.<N>`.
+
+- Example: `v1.7.7-mf.1`
+- `mf` identifies this fork
+- `N` is the release number on top of the same upstream Web UI base
+
+When the fork moves to a newer upstream tag, restart the suffix from `.1`.
+Dev builds may use `git describe --tags --always`; production builds should pass an explicit `VERSION`.
+
 ## Security notes
 
 - The management key is stored in browser `localStorage` using a lightweight obfuscation format (`enc::v1::...`) to avoid plaintext storage; treat it as sensitive.

@@ -3,7 +3,7 @@
  */
 
 import { apiClient } from './client';
-import type { AuthFilesResponse } from '@/types/authFile';
+import type { AuthFileItem, AuthFilesResponse } from '@/types/authFile';
 import type { OAuthModelAliasEntry } from '@/types';
 
 type StatusError = { status?: number };
@@ -32,6 +32,74 @@ const parseAuthFileJsonObject = (rawText: string): Record<string, unknown> => {
   }
 
   return { ...(parsed as Record<string, unknown>) };
+};
+
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+};
+
+const firstDefined = (record: Record<string, unknown>, keys: string[]): unknown => {
+  for (const key of keys) {
+    if (record[key] !== undefined) {
+      return record[key];
+    }
+  }
+  return undefined;
+};
+
+const normalizeAuthFileItem = (value: unknown): AuthFileItem | null => {
+  const record = asRecord(value);
+  if (!record) return null;
+
+  const name = String(record.name ?? '').trim();
+  if (!name) return null;
+
+  const normalized: AuthFileItem = {
+    ...(record as AuthFileItem),
+    name,
+  };
+
+  const aliases: Array<[keyof AuthFileItem, string[]]> = [
+    ['authIndex', ['authIndex', 'auth_index']],
+    ['runtimeOnly', ['runtimeOnly', 'runtime_only']],
+    ['statusMessage', ['statusMessage', 'status_message']],
+    ['lastRefresh', ['lastRefresh', 'last_refresh', 'lastRefreshedAt', 'last_refreshed_at']],
+    ['modified', ['modified', 'modtime']],
+    ['quotaExceeded', ['quotaExceeded', 'quota_exceeded']],
+    ['quotaReason', ['quotaReason', 'quota_reason']],
+    ['quotaNextRecoverAt', ['quotaNextRecoverAt', 'quota_next_recover_at']],
+    ['quotaBackoffLevel', ['quotaBackoffLevel', 'quota_backoff_level']],
+  ];
+
+  aliases.forEach(([targetKey, sourceKeys]) => {
+    const resolved = firstDefined(record, sourceKeys);
+    if (resolved !== undefined) {
+      normalized[targetKey] = resolved as never;
+    }
+  });
+
+  return normalized;
+};
+
+const normalizeAuthFilesResponse = (value: unknown): AuthFilesResponse => {
+  const record = asRecord(value);
+  if (!record) {
+    return { files: [] };
+  }
+
+  const files = Array.isArray(record.files)
+    ? record.files
+        .map((item) => normalizeAuthFileItem(item))
+        .filter((item): item is AuthFileItem => item !== null)
+    : [];
+
+  return {
+    files,
+    total: typeof record.total === 'number' ? record.total : files.length,
+  };
 };
 
 const saveAuthFileText = async (name: string, text: string) => {
@@ -130,7 +198,10 @@ const normalizeOauthModelAlias = (payload: unknown): Record<string, OAuthModelAl
 const OAUTH_MODEL_ALIAS_ENDPOINT = '/oauth-model-alias';
 
 export const authFilesApi = {
-  list: () => apiClient.get<AuthFilesResponse>('/auth-files'),
+  async list(): Promise<AuthFilesResponse> {
+    const payload = await apiClient.get('/auth-files');
+    return normalizeAuthFilesResponse(payload);
+  },
 
   async setStatus(name: string, disabled: boolean): Promise<AuthFileStatusResponse> {
     const json = await authFilesApi.downloadJsonObject(name);
