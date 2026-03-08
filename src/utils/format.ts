@@ -46,11 +46,19 @@ export function formatFileSize(bytes: number): string {
 /**
  * 格式化日期时间
  */
-export function formatDateTime(date: string | Date, locale?: string): string {
+export function formatDateTime(date: string | Date | null | undefined, locale?: string): string {
+  if (date === null || date === undefined || date === '') {
+    return '--';
+  }
+
+  if (typeof date === 'string' && date.startsWith('0001-01-01T00:00:00')) {
+    return '--';
+  }
+
   const d = typeof date === 'string' ? new Date(date) : date;
 
-  if (isNaN(d.getTime())) {
-    return 'Invalid Date';
+  if (isNaN(d.getTime()) || d.getUTCFullYear() <= 1) {
+    return '--';
   }
 
   const resolvedLocale = locale?.trim() || resolveDefaultLocale();

@@ -9,6 +9,8 @@ import {
 } from '@/components/ui/icons';
 import { useAuthStore, useConfigStore, useModelsStore } from '@/stores';
 import { apiKeysApi, providersApi, authFilesApi } from '@/services/api';
+import { formatDateTime } from '@/utils/format';
+import { normalizeApiKeyList } from '@/utils/apiKeys';
 import styles from './DashboardPage.module.scss';
 
 interface QuickStat {
@@ -26,6 +28,17 @@ interface ProviderStats {
   claude: number | null;
   openai: number | null;
 }
+
+const ROUTING_STRATEGY_META = {
+  'round-robin': {
+    labelKey: 'basic_settings.routing_strategy_round_robin',
+    badgeClass: 'configBadgeRoundRobin',
+  },
+  'fill-first': {
+    labelKey: 'basic_settings.routing_strategy_fill_first',
+    badgeClass: 'configBadgeFillFirst',
+  },
+} as const;
 
 export function DashboardPage() {
   const { t, i18n } = useTranslation();
@@ -61,31 +74,6 @@ export function DashboardPage() {
   useEffect(() => {
     apiKeysCache.current = [];
   }, [apiBase, config?.apiKeys]);
-
-  const normalizeApiKeyList = (input: unknown): string[] => {
-    if (!Array.isArray(input)) return [];
-    const seen = new Set<string>();
-    const keys: string[] = [];
-
-    input.forEach((item) => {
-      const record =
-        item !== null && typeof item === 'object' && !Array.isArray(item)
-          ? (item as Record<string, unknown>)
-          : null;
-      const value =
-        typeof item === 'string'
-          ? item
-          : record
-            ? (record['api-key'] ?? record['apiKey'] ?? record.key ?? record.Key)
-            : '';
-      const trimmed = String(value ?? '').trim();
-      if (!trimmed || seen.has(trimmed)) return;
-      seen.add(trimmed);
-      keys.push(trimmed);
-    });
-
-    return keys;
-  };
 
   const resolveApiKeysForModels = useCallback(async () => {
     if (apiKeysCache.current.length) {
@@ -162,21 +150,16 @@ export function DashboardPage() {
   }, [connectionStatus, fetchModels]);
 
   // Calculate total provider keys only when all provider stats are available.
-  const providerStatsReady =
-    providerStats.gemini !== null &&
-    providerStats.codex !== null &&
-    providerStats.claude !== null &&
-    providerStats.openai !== null;
-  const hasProviderStats =
-    providerStats.gemini !== null ||
-    providerStats.codex !== null ||
-    providerStats.claude !== null ||
-    providerStats.openai !== null;
+  const providerStatValues = [
+    providerStats.gemini,
+    providerStats.codex,
+    providerStats.claude,
+    providerStats.openai,
+  ];
+  const providerStatsReady = providerStatValues.every((value) => value !== null);
+  const hasProviderStats = providerStatValues.some((value) => value !== null);
   const totalProviderKeys = providerStatsReady
-    ? (providerStats.gemini ?? 0) +
-      (providerStats.codex ?? 0) +
-      (providerStats.claude ?? 0) +
-      (providerStats.openai ?? 0)
+    ? providerStatValues.reduce((sum, value) => sum + (value ?? 0), 0)
     : 0;
 
   const quickStats: QuickStat[] = [
@@ -221,21 +204,16 @@ export function DashboardPage() {
     }
   ];
 
-  const routingStrategyRaw = config?.routingStrategy?.trim() || '';
-  const routingStrategyDisplay = !routingStrategyRaw
-    ? '-'
-    : routingStrategyRaw === 'round-robin'
-      ? t('basic_settings.routing_strategy_round_robin')
-      : routingStrategyRaw === 'fill-first'
-        ? t('basic_settings.routing_strategy_fill_first')
-        : routingStrategyRaw;
-  const routingStrategyBadgeClass = !routingStrategyRaw
-    ? styles.configBadgeUnknown
-    : routingStrategyRaw === 'round-robin'
-      ? styles.configBadgeRoundRobin
-      : routingStrategyRaw === 'fill-first'
-        ? styles.configBadgeFillFirst
-        : styles.configBadgeUnknown;
+  const routingStrategyRaw = config?.routingStrategy?.trim() || 'round-robin';
+  const routingStrategyMeta =
+    ROUTING_STRATEGY_META[routingStrategyRaw as keyof typeof ROUTING_STRATEGY_META];
+  const routingStrategyDisplay = routingStrategyMeta
+    ? t(routingStrategyMeta.labelKey)
+    : routingStrategyRaw;
+  const routingStrategyBadgeClass = routingStrategyMeta
+    ? styles[routingStrategyMeta.badgeClass]
+    : styles.configBadgeUnknown;
+  const formattedBuildDate = serverBuildDate ? formatDateTime(serverBuildDate, i18n.language) : '--';
 
   return (
     <div className={styles.dashboard}>
@@ -272,9 +250,9 @@ export function DashboardPage() {
               v{serverVersion.trim().replace(/^[vV]+/, '')}
             </span>
           )}
-          {serverBuildDate && (
+          {formattedBuildDate !== '--' && (
             <span className={styles.buildDate}>
-              {new Date(serverBuildDate).toLocaleDateString(i18n.language)}
+              {formattedBuildDate.split(' ')[0]}
             </span>
           )}
         </div>

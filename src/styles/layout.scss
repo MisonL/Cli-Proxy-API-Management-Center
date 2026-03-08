@@ -488,8 +488,12 @@
 
     &.active {
       background: rgba($primary-color, 0.14);
-      color: var(--primary-color);
+      color: var(--text-primary);
       border: 1px solid rgba($primary-color, 0.35);
+
+      .nav-icon {
+        color: var(--primary-active);
+      }
     }
   }
 

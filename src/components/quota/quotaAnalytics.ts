@@ -61,12 +61,19 @@ type QuotaMetricObservation = {
   windowHours?: number | null;
 };
 
+export type AnalyticsBucketItem = {
+  fileName: string;
+  remainingPercent: number;
+  resetAt?: string;
+};
+
 export type AnalyticsHistogramDataset = {
   id: string;
   label: string;
   color: string;
   counts: number[];
   averageRemaining: number | null;
+  bucketItems: AnalyticsBucketItem[][];
 };
 
 export type AnalyticsWindowStat = {
@@ -80,6 +87,28 @@ export type AnalyticsWindowStat = {
   activePoolPercent: number;
   avgDailyRequests: number;
   avgDailyTokens: number;
+};
+
+export type ProviderWarning = {
+  id: string;
+  level: 'warning' | 'danger';
+  message: string;
+};
+
+export type QuotaWarningThresholds = {
+  healthLowPercent: number;
+  riskDays: number;
+  snapshotCoveragePercent: number;
+  failureRate24hPercent: number;
+  activePoolPercent7d: number;
+};
+
+export const DEFAULT_QUOTA_WARNING_THRESHOLDS: QuotaWarningThresholds = {
+  healthLowPercent: 40,
+  riskDays: 3,
+  snapshotCoveragePercent: 50,
+  failureRate24hPercent: 20,
+  activePoolPercent7d: 25,
 };
 
 export type ProviderAnalytics = {
@@ -102,6 +131,7 @@ export type ProviderAnalytics = {
   avgDailyQuotaBurnPercent: number | null;
   activePoolPercent7d: number;
   note: string;
+  warnings: ProviderWarning[];
 };
 
 type QuotaStateMap =
@@ -226,11 +256,27 @@ const bucketIndexForPercent = (percent: number) => {
 };
 
 const buildHistogramDatasets = (observations: QuotaMetricObservation[]): AnalyticsHistogramDataset[] => {
-  const grouped = new Map<string, { label: string; values: number[] }>();
+  const grouped = new Map<
+    string,
+    {
+      label: string;
+      values: number[];
+      bucketItems: AnalyticsBucketItem[][];
+    }
+  >();
 
   observations.forEach((observation) => {
-    const current = grouped.get(observation.metricId) ?? { label: observation.metricLabel, values: [] };
+    const current = grouped.get(observation.metricId) ?? {
+      label: observation.metricLabel,
+      values: [],
+      bucketItems: QUOTA_ANALYTICS_BUCKET_LABELS.map(() => [] as AnalyticsBucketItem[]),
+    };
     current.values.push(observation.remainingPercent);
+    current.bucketItems[bucketIndexForPercent(observation.remainingPercent)]?.push({
+      fileName: observation.fileName,
+      remainingPercent: observation.remainingPercent,
+      resetAt: observation.resetAt,
+    });
     grouped.set(observation.metricId, current);
   });
 
@@ -243,6 +289,14 @@ const buildHistogramDatasets = (observations: QuotaMetricObservation[]): Analyti
       group.values.length > 0
         ? group.values.reduce((sum, value) => sum + value, 0) / group.values.length
         : null;
+    const bucketItems = group.bucketItems.map((items) =>
+      [...items].sort((left, right) => {
+        if (right.remainingPercent !== left.remainingPercent) {
+          return right.remainingPercent - left.remainingPercent;
+        }
+        return left.fileName.localeCompare(right.fileName);
+      })
+    );
 
     return {
       id: metricId,
@@ -250,6 +304,7 @@ const buildHistogramDatasets = (observations: QuotaMetricObservation[]): Analyti
       color: DATASET_COLORS[index % DATASET_COLORS.length],
       counts,
       averageRemaining,
+      bucketItems,
     };
   });
 };
@@ -570,12 +625,98 @@ const buildQuotaNote = (
   return t('quota_management.analytics.note_ready');
 };
 
+const buildProviderWarnings = (
+  t: TFunction,
+  analytics: Pick<
+    ProviderAnalytics,
+    | 'mode'
+    | 'conservativeHealth'
+    | 'conservativeRiskDays'
+    | 'activePoolPercent7d'
+    | 'loadedFiles'
+    | 'totalFiles'
+    | 'failedQuotaFiles'
+    | 'windowStats'
+  >,
+  thresholds: QuotaWarningThresholds
+): ProviderWarning[] => {
+  const warnings: ProviderWarning[] = [];
+
+  if (analytics.mode === 'quota') {
+    if ((analytics.conservativeHealth ?? 100) < thresholds.healthLowPercent) {
+      warnings.push({
+        id: 'health-low',
+        level: 'danger',
+        message: t('quota_management.analytics.warning_health_low'),
+      });
+    }
+    if (
+      analytics.conservativeRiskDays !== null &&
+      analytics.conservativeRiskDays !== undefined &&
+      analytics.conservativeRiskDays < thresholds.riskDays
+    ) {
+      warnings.push({
+        id: 'risk-near',
+        level: 'danger',
+        message: t('quota_management.analytics.warning_risk_near', {
+          days: Number(analytics.conservativeRiskDays.toFixed(1)),
+        }),
+      });
+    }
+    if (
+      analytics.totalFiles > 0 &&
+      (analytics.loadedFiles / analytics.totalFiles) * 100 < thresholds.snapshotCoveragePercent
+    ) {
+      warnings.push({
+        id: 'snapshot-low',
+        level: 'warning',
+        message: t('quota_management.analytics.warning_snapshot_low', {
+          loaded: analytics.loadedFiles,
+          total: analytics.totalFiles,
+        }),
+      });
+    }
+    if (analytics.failedQuotaFiles > 0) {
+      warnings.push({
+        id: 'snapshot-failed',
+        level: 'warning',
+        message: t('quota_management.analytics.warning_snapshot_failed', {
+          count: analytics.failedQuotaFiles,
+        }),
+      });
+    }
+  }
+
+  const window24h = analytics.windowStats.find((item) => item.id === '24h');
+  if ((window24h?.failureRate ?? 0) >= thresholds.failureRate24hPercent) {
+    warnings.push({
+      id: 'failure-rate-high',
+      level: 'warning',
+      message: t('quota_management.analytics.warning_failure_rate_high', {
+        rate: Number((window24h?.failureRate ?? 0).toFixed(1)),
+      }),
+    });
+  }
+  if ((analytics.activePoolPercent7d ?? 100) < thresholds.activePoolPercent7d) {
+    warnings.push({
+      id: 'pool-inactive',
+      level: 'warning',
+      message: t('quota_management.analytics.warning_pool_inactive', {
+        percent: Number((analytics.activePoolPercent7d ?? 0).toFixed(1)),
+      }),
+    });
+  }
+
+  return warnings;
+};
+
 export function buildProviderAnalytics(
   t: TFunction,
   providerKey: string,
   files: AuthFileItem[],
   allUsageDetails: UsageDetail[],
-  quotaMap?: QuotaStateMap
+  quotaMap?: QuotaStateMap,
+  thresholds: QuotaWarningThresholds = DEFAULT_QUOTA_WARNING_THRESHOLDS
 ): ProviderAnalytics {
   const providerFiles = files.filter((file) => getProviderKey(file) === providerKey);
   const usageDetails = collectProviderUsage(providerFiles, allUsageDetails);
@@ -591,7 +732,7 @@ export function buildProviderAnalytics(
     const availabilityRatio = activeFiles > 0 ? ((activeFiles - unavailableFiles) / activeFiles) * 100 : 100;
     const operationalHealth = clampPercent(availabilityRatio * 0.55 + successRate7d * 0.45);
 
-    return {
+    const result: ProviderAnalytics = {
       providerKey,
       mode: 'usage-only',
       totalFiles,
@@ -611,7 +752,10 @@ export function buildProviderAnalytics(
       avgDailyQuotaBurnPercent: null,
       activePoolPercent7d,
       note: t('quota_management.analytics.note_usage_only'),
+      warnings: [],
     };
+    result.warnings = buildProviderWarnings(t, result, thresholds);
+    return result;
   }
 
   const { observations, loadedFiles, failedFiles } = buildQuotaObservations(
@@ -636,7 +780,7 @@ export function buildProviderAnalytics(
     .map((observation) => estimateRiskDays(observation, nowMs))
     .filter((value): value is number => value !== null && value >= 0);
 
-  return {
+  const result: ProviderAnalytics = {
     providerKey,
     mode: 'quota',
     totalFiles,
@@ -660,5 +804,8 @@ export function buildProviderAnalytics(
       burnValues.length > 0 ? burnValues.reduce((sum, value) => sum + value, 0) / burnValues.length : null,
     activePoolPercent7d,
     note: buildQuotaNote(t, loadedFiles, totalFiles, failedFiles),
+    warnings: [],
   };
+  result.warnings = buildProviderWarnings(t, result, thresholds);
+  return result;
 }

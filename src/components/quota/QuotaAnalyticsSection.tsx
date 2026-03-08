@@ -8,6 +8,7 @@ import { triggerHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import type { AuthFileItem } from '@/types/authFile';
 import type { UsageDetail } from '@/utils/usage';
 import { QuotaAnalyticsView } from './QuotaAnalyticsView';
+import type { QuotaWarningThresholds } from './quotaAnalytics';
 import styles from '@/pages/QuotaPage.module.scss';
 
 interface QuotaAnalyticsSectionProps {
@@ -17,6 +18,7 @@ interface QuotaAnalyticsSectionProps {
   usageDetails: UsageDetail[];
   loading: boolean;
   disabled: boolean;
+  warningThresholds?: QuotaWarningThresholds;
 }
 
 export function QuotaAnalyticsSection({
@@ -26,6 +28,7 @@ export function QuotaAnalyticsSection({
   usageDetails,
   loading,
   disabled,
+  warningThresholds,
 }: QuotaAnalyticsSectionProps) {
   const { t } = useTranslation();
 
@@ -74,6 +77,7 @@ export function QuotaAnalyticsSection({
           files={files}
           usageDetails={usageDetails}
           loading={loading}
+          warningThresholds={warningThresholds}
         />
       )}
     </Card>

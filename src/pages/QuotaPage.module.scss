@@ -41,6 +41,13 @@
   }
 }
 
+.analyticsThresholdGrid {
+  display: grid;
+  gap: $spacing-md;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin-top: $spacing-sm;
+}
+
 .titleWrapper {
   display: flex;
   align-items: center;
@@ -486,6 +493,19 @@
   gap: 8px;
 }
 
+.analyticsLegendSummary {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-right: 8px;
+}
+
+.analyticsLegendSummaryText {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
 .analyticsLegendItem {
   display: inline-flex;
   align-items: center;
@@ -523,6 +543,7 @@
 .analyticsChartCanvas {
   position: relative;
   min-height: 360px;
+  border-radius: $radius-lg;
 
   @include mobile {
     min-height: 300px;
@@ -551,6 +572,32 @@
   @include mobile {
     grid-template-columns: 1fr;
   }
+}
+
+.analyticsWarningList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.analyticsWarningItem {
+  padding: 10px 12px;
+  border-radius: $radius-md;
+  border: 1px solid transparent;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.analyticsWarningWarn {
+  background: rgba(217, 119, 6, 0.08);
+  border-color: rgba(217, 119, 6, 0.2);
+  color: #b45309;
+}
+
+.analyticsWarningDanger {
+  background: rgba(198, 87, 70, 0.08);
+  border-color: rgba(198, 87, 70, 0.22);
+  color: var(--danger-color);
 }
 
 .analyticsHealthCard {
@@ -688,4 +735,164 @@
   gap: 4px;
   font-size: 11px;
   color: var(--text-secondary);
+}
+
+.analyticsBucketModal {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+}
+
+.analyticsBucketToolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: $spacing-md;
+  padding: 12px 14px;
+  border-radius: $radius-lg;
+  border: 1px solid var(--border-color);
+  background:
+    linear-gradient(180deg, rgba(139, 134, 128, 0.08), transparent 48%),
+    var(--bg-secondary);
+
+  @include mobile {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+.analyticsBucketSummary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.analyticsBucketSummaryTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.analyticsBucketSummaryMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+
+  span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 0 10px;
+    border-radius: 999px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+  }
+}
+
+.analyticsBucketEmpty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+  padding: $spacing-lg;
+  border-radius: $radius-lg;
+  border: 1px dashed var(--border-color);
+  background: rgba(139, 134, 128, 0.04);
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: center;
+}
+
+.analyticsBucketList {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+  max-height: min(62vh, 720px);
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.analyticsBucketRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: $spacing-md;
+  padding: 14px;
+  border-radius: $radius-lg;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  box-shadow: $shadow-sm;
+
+  @include mobile {
+    flex-direction: column;
+  }
+}
+
+.analyticsBucketMain {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.analyticsBucketHeader {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  min-width: 0;
+
+  @include mobile {
+    flex-wrap: wrap;
+  }
+}
+
+.analyticsBucketMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+
+  span {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+}
+
+.analyticsBucketFlags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.analyticsBucketFlag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--primary-color);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.analyticsBucketFlagWarning {
+  background: rgba(217, 119, 6, 0.12);
+  color: #b45309;
+}
+
+.analyticsBucketFlagDanger {
+  background: rgba(198, 87, 70, 0.12);
+  color: var(--danger-color);
+}
+
+.analyticsBucketActions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
 }

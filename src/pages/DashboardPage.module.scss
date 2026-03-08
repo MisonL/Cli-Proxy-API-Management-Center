@@ -100,8 +100,9 @@
 .serverVersion {
   font-size: 13px;
   font-weight: 600;
-  color: var(--primary-color);
-  background: rgba($primary-color, 0.1);
+  color: var(--text-primary);
+  background: rgba($primary-color, 0.18);
+  border: 1px solid rgba($primary-color, 0.28);
   padding: 4px 10px;
   border-radius: $radius-full;
 }
@@ -174,7 +175,6 @@
 .statSublabel {
   font-size: 11px;
   color: var(--text-secondary);
-  opacity: 0.8;
   margin-top: 2px;
 }
 
@@ -343,7 +343,7 @@
   display: inline-flex;
   align-items: center;
   font-size: 13px;
-  color: var(--primary-color);
+  color: var(--primary-active);
   text-decoration: none;
   margin-top: $spacing-xs;
 

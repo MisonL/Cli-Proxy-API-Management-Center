@@ -228,70 +228,81 @@ export function LoginPage() {
                 <div className={styles.hint}>{t('login.connection_auto_hint')}</div>
               </div>
 
-              <div className={styles.toggleAdvanced}>
-                <input
-                  id="custom-connection-toggle"
-                  type="checkbox"
-                  checked={showCustomBase}
-                  onChange={(e) => setShowCustomBase(e.target.checked)}
-                />
-                <label htmlFor="custom-connection-toggle">{t('login.custom_connection_label')}</label>
-              </div>
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleSubmit();
+                }}
+              >
+                <div className={styles.toggleAdvanced}>
+                  <input
+                    id="custom-connection-toggle"
+                    name="custom-connection-toggle"
+                    type="checkbox"
+                    checked={showCustomBase}
+                    onChange={(e) => setShowCustomBase(e.target.checked)}
+                  />
+                  <label htmlFor="custom-connection-toggle">{t('login.custom_connection_label')}</label>
+                </div>
 
-              {showCustomBase && (
+                {showCustomBase && (
+                  <Input
+                    name="api-base"
+                    label={t('login.custom_connection_label')}
+                    placeholder={t('login.custom_connection_placeholder')}
+                    value={apiBase}
+                    onChange={(e) => setApiBase(e.target.value)}
+                    hint={t('login.custom_connection_hint')}
+                  />
+                )}
+
                 <Input
-                  label={t('login.custom_connection_label')}
-                  placeholder={t('login.custom_connection_placeholder')}
-                  value={apiBase}
-                  onChange={(e) => setApiBase(e.target.value)}
-                  hint={t('login.custom_connection_hint')}
+                  autoFocus
+                  name="management-key"
+                  label={t('login.management_key_label')}
+                  placeholder={t('login.management_key_placeholder')}
+                  type={showKey ? 'text' : 'password'}
+                  value={managementKey}
+                  onChange={(e) => setManagementKey(e.target.value)}
+                  onKeyDown={handleSubmitKeyDown}
+                  rightElement={
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setShowKey((prev) => !prev)}
+                      aria-label={
+                        showKey
+                          ? t('login.hide_key', { defaultValue: '隐藏密钥' })
+                          : t('login.show_key', { defaultValue: '显示密钥' })
+                      }
+                      title={
+                        showKey
+                          ? t('login.hide_key', { defaultValue: '隐藏密钥' })
+                          : t('login.show_key', { defaultValue: '显示密钥' })
+                      }
+                    >
+                      {showKey ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                    </button>
+                  }
                 />
-              )}
 
-              <Input
-                autoFocus
-                label={t('login.management_key_label')}
-                placeholder={t('login.management_key_placeholder')}
-                type={showKey ? 'text' : 'password'}
-                value={managementKey}
-                onChange={(e) => setManagementKey(e.target.value)}
-                onKeyDown={handleSubmitKeyDown}
-                rightElement={
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setShowKey((prev) => !prev)}
-                    aria-label={
-                      showKey
-                        ? t('login.hide_key', { defaultValue: '隐藏密钥' })
-                        : t('login.show_key', { defaultValue: '显示密钥' })
-                    }
-                    title={
-                      showKey
-                        ? t('login.hide_key', { defaultValue: '隐藏密钥' })
-                        : t('login.show_key', { defaultValue: '显示密钥' })
-                    }
-                  >
-                    {showKey ? <IconEyeOff size={16} /> : <IconEye size={16} />}
-                  </button>
-                }
-              />
+                <div className={styles.toggleAdvanced}>
+                  <input
+                    id="remember-password-toggle"
+                    name="remember-password"
+                    type="checkbox"
+                    checked={rememberPassword}
+                    onChange={(e) => setRememberPassword(e.target.checked)}
+                  />
+                  <label htmlFor="remember-password-toggle">{t('login.remember_password_label')}</label>
+                </div>
 
-              <div className={styles.toggleAdvanced}>
-                <input
-                  id="remember-password-toggle"
-                  type="checkbox"
-                  checked={rememberPassword}
-                  onChange={(e) => setRememberPassword(e.target.checked)}
-                />
-                <label htmlFor="remember-password-toggle">{t('login.remember_password_label')}</label>
-              </div>
+                <Button fullWidth type="submit" loading={loading}>
+                  {loading ? t('login.submitting') : t('login.submit_button')}
+                </Button>
 
-              <Button fullWidth onClick={handleSubmit} loading={loading}>
-                {loading ? t('login.submitting') : t('login.submit_button')}
-              </Button>
-
-              {error && <div className={styles.errorBox}>{error}</div>}
+                {error && <div className={styles.errorBox}>{error}</div>}
+              </form>
             </div>
           </div>
         )}

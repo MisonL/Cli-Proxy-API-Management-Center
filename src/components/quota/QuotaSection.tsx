@@ -18,6 +18,7 @@ import type { QuotaConfig } from './quotaConfigs';
 import { useGridColumns } from './useGridColumns';
 import { IconRefreshCw } from '@/components/ui/icons';
 import { QuotaAnalyticsView } from './QuotaAnalyticsView';
+import type { QuotaWarningThresholds } from './quotaAnalytics';
 import styles from '@/pages/QuotaPage.module.scss';
 
 type QuotaUpdater<T> = T | ((prev: T) => T);
@@ -99,6 +100,7 @@ interface QuotaSectionProps<TState extends QuotaStatusState, TData> {
   disabled: boolean;
   usageDetails: UsageDetail[];
   usageLoading?: boolean;
+  warningThresholds?: QuotaWarningThresholds;
 }
 
 export function QuotaSection<TState extends QuotaStatusState, TData>({
@@ -108,6 +110,7 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
   disabled,
   usageDetails,
   usageLoading = false,
+  warningThresholds,
 }: QuotaSectionProps<TState, TData>) {
   const { t } = useTranslation();
   const resolvedTheme: ResolvedTheme = useThemeStore((state) => state.resolvedTheme);
@@ -309,6 +312,7 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
           usageDetails={usageDetails}
           quotaMap={quota as unknown as Record<string, unknown>}
           loading={isRefreshing || usageLoading}
+          warningThresholds={warningThresholds}
         />
       ) : (
         <>

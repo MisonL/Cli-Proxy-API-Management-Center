@@ -9,10 +9,12 @@ import {
   Title,
   Tooltip,
   Legend,
-  Filler
+  Filler,
 } from 'chart.js';
 import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { Modal } from '@/components/ui/Modal';
 import { Select } from '@/components/ui/Select';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
@@ -31,14 +33,26 @@ import {
   ServiceHealthCard,
   useUsageData,
   useSparklines,
-  useChartData
+  useChartData,
 } from '@/components/usage';
+import {
+  HOUR_WINDOW_BY_TIME_RANGE,
+  MAX_CHART_LINES,
+  buildUsageTimeRangeOptions,
+  loadStoredUsageChartLines,
+  loadStoredUsageTimeRange,
+  normalizeUsageChartLines,
+  saveStoredUsageChartLines,
+  saveStoredUsageTimeRange,
+} from '@/components/usage/usagePageState';
+import { UsagePersistenceStatusPanel } from '@/components/usage/UsagePersistenceStatusPanel';
+import { formatUsageDateTime } from '@/components/usage/usagePersistence';
 import {
   getModelNamesFromUsage,
   getApiStats,
   getModelStats,
   filterUsageByTimeRange,
-  type UsageTimeRange
+  type UsageTimeRange,
 } from '@/utils/usage';
 import styles from './UsagePage.module.scss';
 
@@ -54,67 +68,6 @@ ChartJS.register(
   Filler
 );
 
-const CHART_LINES_STORAGE_KEY = 'cli-proxy-usage-chart-lines-v1';
-const TIME_RANGE_STORAGE_KEY = 'cli-proxy-usage-time-range-v1';
-const DEFAULT_CHART_LINES = ['all'];
-const DEFAULT_TIME_RANGE: UsageTimeRange = '24h';
-const MAX_CHART_LINES = 9;
-const TIME_RANGE_OPTIONS: ReadonlyArray<{ value: UsageTimeRange; labelKey: string }> = [
-  { value: 'all', labelKey: 'usage_stats.range_all' },
-  { value: '7h', labelKey: 'usage_stats.range_7h' },
-  { value: '24h', labelKey: 'usage_stats.range_24h' },
-  { value: '7d', labelKey: 'usage_stats.range_7d' },
-];
-const HOUR_WINDOW_BY_TIME_RANGE: Record<Exclude<UsageTimeRange, 'all'>, number> = {
-  '7h': 7,
-  '24h': 24,
-  '7d': 7 * 24
-};
-
-const isUsageTimeRange = (value: unknown): value is UsageTimeRange =>
-  value === '7h' || value === '24h' || value === '7d' || value === 'all';
-
-const normalizeChartLines = (value: unknown, maxLines = MAX_CHART_LINES): string[] => {
-  if (!Array.isArray(value)) {
-    return DEFAULT_CHART_LINES;
-  }
-
-  const filtered = value
-    .filter((item): item is string => typeof item === 'string')
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .slice(0, maxLines);
-
-  return filtered.length ? filtered : DEFAULT_CHART_LINES;
-};
-
-const loadChartLines = (): string[] => {
-  try {
-    if (typeof localStorage === 'undefined') {
-      return DEFAULT_CHART_LINES;
-    }
-    const raw = localStorage.getItem(CHART_LINES_STORAGE_KEY);
-    if (!raw) {
-      return DEFAULT_CHART_LINES;
-    }
-    return normalizeChartLines(JSON.parse(raw));
-  } catch {
-    return DEFAULT_CHART_LINES;
-  }
-};
-
-const loadTimeRange = (): UsageTimeRange => {
-  try {
-    if (typeof localStorage === 'undefined') {
-      return DEFAULT_TIME_RANGE;
-    }
-    const raw = localStorage.getItem(TIME_RANGE_STORAGE_KEY);
-    return isUsageTimeRange(raw) ? raw : DEFAULT_TIME_RANGE;
-  } catch {
-    return DEFAULT_TIME_RANGE;
-  }
-};
-
 export function UsagePage() {
   const { t } = useTranslation();
   const isMobile = useMediaQuery('(max-width: 768px)');
@@ -128,75 +81,60 @@ export function UsagePage() {
     loading,
     error,
     lastRefreshedAt,
+    persistenceStatus,
     modelPrices,
     setModelPrices,
     loadUsage,
+    loadPersistenceStatus,
     handleExport,
     handleImport,
     handleImportChange,
+    confirmImport,
+    closeImportPreview,
     importInputRef,
+    importPreview,
     exporting,
-    importing
+    importing,
   } = useUsageData();
 
-  useHeaderRefresh(loadUsage);
+  const handleRefresh = useCallback(async () => {
+    await Promise.all([loadUsage(), loadPersistenceStatus()]);
+  }, [loadPersistenceStatus, loadUsage]);
+  const triggerRefresh = useCallback(() => {
+    void handleRefresh().catch(() => {});
+  }, [handleRefresh]);
+
+  useHeaderRefresh(handleRefresh);
 
   // Chart lines state
-  const [chartLines, setChartLines] = useState<string[]>(loadChartLines);
-  const [timeRange, setTimeRange] = useState<UsageTimeRange>(loadTimeRange);
+  const [chartLines, setChartLines] = useState<string[]>(loadStoredUsageChartLines);
+  const [timeRange, setTimeRange] = useState<UsageTimeRange>(loadStoredUsageTimeRange);
 
-  const timeRangeOptions = useMemo(
-    () =>
-      TIME_RANGE_OPTIONS.map((opt) => ({
-        value: opt.value,
-        label: t(opt.labelKey)
-      })),
-    [t]
-  );
+  const timeRangeOptions = useMemo(() => buildUsageTimeRangeOptions(t), [t]);
 
   const filteredUsage = useMemo(
     () => (usage ? filterUsageByTimeRange(usage, timeRange) : null),
     [usage, timeRange]
   );
-  const hourWindowHours =
-    timeRange === 'all' ? undefined : HOUR_WINDOW_BY_TIME_RANGE[timeRange];
+  const hourWindowHours = timeRange === 'all' ? undefined : HOUR_WINDOW_BY_TIME_RANGE[timeRange];
 
   const handleChartLinesChange = useCallback((lines: string[]) => {
-    setChartLines(normalizeChartLines(lines));
+    setChartLines(normalizeUsageChartLines(lines));
   }, []);
 
   useEffect(() => {
-    try {
-      if (typeof localStorage === 'undefined') {
-        return;
-      }
-      localStorage.setItem(CHART_LINES_STORAGE_KEY, JSON.stringify(chartLines));
-    } catch {
-      // Ignore storage errors.
-    }
+    saveStoredUsageChartLines(chartLines);
   }, [chartLines]);
 
   useEffect(() => {
-    try {
-      if (typeof localStorage === 'undefined') {
-        return;
-      }
-      localStorage.setItem(TIME_RANGE_STORAGE_KEY, timeRange);
-    } catch {
-      // Ignore storage errors.
-    }
+    saveStoredUsageTimeRange(timeRange);
   }, [timeRange]);
 
   const nowMs = lastRefreshedAt?.getTime() ?? 0;
 
   // Sparklines hook
-  const {
-    requestsSparkline,
-    tokensSparkline,
-    rpmSparkline,
-    tpmSparkline,
-    costSparkline
-  } = useSparklines({ usage: filteredUsage, loading, nowMs });
+  const { requestsSparkline, tokensSparkline, rpmSparkline, tpmSparkline, costSparkline } =
+    useSparklines({ usage: filteredUsage, loading, nowMs });
 
   // Chart data hook
   const {
@@ -207,7 +145,7 @@ export function UsagePage() {
     requestsChartData,
     tokensChartData,
     requestsChartOptions,
-    tokensChartOptions
+    tokensChartOptions,
   } = useChartData({ usage: filteredUsage, chartLines, isDark, isMobile, hourWindowHours });
 
   // Derived data
@@ -268,7 +206,7 @@ export function UsagePage() {
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => void loadUsage().catch(() => {})}
+            onClick={triggerRefresh}
             disabled={loading || exporting || importing}
           >
             {loading ? t('common.loading') : t('usage_stats.refresh')}
@@ -290,6 +228,22 @@ export function UsagePage() {
 
       {error && <div className={styles.errorBox}>{error}</div>}
 
+      <Card
+        title={t('usage_stats.persistence_title')}
+        extra={
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={triggerRefresh}
+            disabled={loading || exporting || importing}
+          >
+            {t('common.refresh')}
+          </Button>
+        }
+      >
+        <UsagePersistenceStatusPanel status={persistenceStatus} />
+      </Card>
+
       {/* Stats Overview Cards */}
       <StatCards
         usage={filteredUsage}
@@ -301,7 +255,7 @@ export function UsagePage() {
           tokens: tokensSparkline,
           rpm: rpmSparkline,
           tpm: tpmSparkline,
-          cost: costSparkline
+          cost: costSparkline,
         }}
       />
 
@@ -392,6 +346,62 @@ export function UsagePage() {
         modelPrices={modelPrices}
         onPricesChange={setModelPrices}
       />
+
+      <Modal
+        open={importPreview !== null}
+        onClose={closeImportPreview}
+        title={t('usage_stats.import_preview_title')}
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeImportPreview} disabled={importing}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={() => void confirmImport()} loading={importing}>
+              {t('usage_stats.import_confirm')}
+            </Button>
+          </>
+        }
+      >
+        {importPreview ? (
+          <div className={styles.importPreview}>
+            <div className="status-badge warning">{t('usage_stats.import_merge_notice')}</div>
+            <div className={styles.importPreviewGrid}>
+              <div className={styles.importPreviewItem}>
+                <span>{t('usage_stats.import_file_name')}</span>
+                <strong>{importPreview.fileName}</strong>
+              </div>
+              <div className={styles.importPreviewItem}>
+                <span>{t('usage_stats.import_version')}</span>
+                <strong>{importPreview.version ?? '--'}</strong>
+              </div>
+              <div className={styles.importPreviewItem}>
+                <span>{t('usage_stats.import_exported_at')}</span>
+                <strong>{formatUsageDateTime(importPreview.exportedAt)}</strong>
+              </div>
+              <div className={styles.importPreviewItem}>
+                <span>{t('usage_stats.total_requests')}</span>
+                <strong>{importPreview.totalRequests}</strong>
+              </div>
+              <div className={styles.importPreviewItem}>
+                <span>{t('usage_stats.failed_requests')}</span>
+                <strong>{importPreview.failureCount}</strong>
+              </div>
+              <div className={styles.importPreviewItem}>
+                <span>{t('usage_stats.total_tokens')}</span>
+                <strong>{importPreview.totalTokens}</strong>
+              </div>
+              <div className={styles.importPreviewItem}>
+                <span>{t('usage_stats.import_api_count')}</span>
+                <strong>{importPreview.apiCount}</strong>
+              </div>
+              <div className={styles.importPreviewItem}>
+                <span>{t('usage_stats.import_model_count')}</span>
+                <strong>{importPreview.modelCount}</strong>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
     </div>
   );
 }

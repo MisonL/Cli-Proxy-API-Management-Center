@@ -123,10 +123,28 @@ export function AuthFileCard(props: AuthFileCardProps) {
                 className={`${styles.selectionToggle} ${selected ? styles.selectionToggleActive : ''}`}
                 onClick={() => onToggleSelect(file.name)}
                 aria-label={
-                  selected ? t('auth_files.batch_deselect') : t('auth_files.batch_select_all')
+                  selected
+                    ? t('auth_files.batch_deselect_file', {
+                        name: file.name,
+                        defaultValue: `取消选择认证文件 ${file.name}`,
+                      })
+                    : t('auth_files.batch_select_file', {
+                        name: file.name,
+                        defaultValue: `选择认证文件 ${file.name}`,
+                      })
                 }
                 aria-pressed={selected}
-                title={selected ? t('auth_files.batch_deselect') : t('auth_files.batch_select_all')}
+                title={
+                  selected
+                    ? t('auth_files.batch_deselect_file', {
+                        name: file.name,
+                        defaultValue: `取消选择认证文件 ${file.name}`,
+                      })
+                    : t('auth_files.batch_select_file', {
+                        name: file.name,
+                        defaultValue: `选择认证文件 ${file.name}`,
+                      })
+                }
               >
                 {selected && <IconCheck size={12} />}
               </button>

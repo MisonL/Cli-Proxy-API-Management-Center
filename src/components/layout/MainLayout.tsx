@@ -559,6 +559,11 @@ export function MainLayout() {
           <button
             className="sidebar-toggle-header"
             onClick={() => setSidebarCollapsed((prev) => !prev)}
+            aria-label={
+              sidebarCollapsed
+                ? t('sidebar.expand', { defaultValue: '展开' })
+                : t('sidebar.collapse', { defaultValue: '收起' })
+            }
             title={
               sidebarCollapsed
                 ? t('sidebar.expand', { defaultValue: '展开' })
@@ -598,6 +603,8 @@ export function MainLayout() {
               variant="ghost"
               size="sm"
               onClick={() => setSidebarOpen((prev) => !prev)}
+              aria-label={t('sidebar.toggle_expand', { defaultValue: '展开侧边导航' })}
+              title={t('sidebar.toggle_expand', { defaultValue: '展开侧边导航' })}
             >
               {headerIcons.menu}
             </Button>
@@ -605,6 +612,7 @@ export function MainLayout() {
               variant="ghost"
               size="sm"
               onClick={handleRefreshAll}
+              aria-label={t('header.refresh_all')}
               title={t('header.refresh_all')}
             >
               {headerIcons.refresh}
@@ -614,6 +622,7 @@ export function MainLayout() {
               size="sm"
               onClick={handleVersionCheck}
               loading={checkingVersion}
+              aria-label={t('system_info.version_check_button')}
               title={t('system_info.version_check_button')}
             >
               {headerIcons.update}

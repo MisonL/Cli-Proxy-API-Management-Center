@@ -2,6 +2,10 @@ export type AuthFilesUiState = {
   filter?: string;
   problemOnly?: boolean;
   search?: string;
+  statusFilter?: 'all' | 'healthy' | 'disabled' | 'unavailable' | 'warning' | 'quota-limited';
+  activityFilter?: 'all' | '24h' | '7d';
+  sortBy?: 'name' | 'modified-desc' | 'active-desc' | 'success-desc' | 'failure-desc';
+  viewMode?: 'diagram' | 'list';
   page?: number;
   pageSize?: number;
 };

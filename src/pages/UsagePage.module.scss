@@ -71,6 +71,47 @@
   padding: 16px;
 }
 
+.importPreviewGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+
+  @include tablet {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  @include mobile {
+    grid-template-columns: 1fr;
+  }
+}
+
+.importPreviewItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border-radius: $radius-md;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+
+  span {
+    font-size: 11px;
+    color: var(--text-tertiary);
+  }
+
+  strong {
+    font-size: 14px;
+    color: var(--text-primary);
+    word-break: break-word;
+  }
+}
+
+.importPreview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .loadingOverlay {
   position: absolute;
   inset: 0;

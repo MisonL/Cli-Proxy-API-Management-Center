@@ -11,12 +11,21 @@ import {
 } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
 import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/Button';
 import { useThemeStore } from '@/stores';
 import type { AuthFileItem } from '@/types/authFile';
 import type { UsageDetail } from '@/utils/usage';
 import { formatCompactNumber } from '@/utils/usage';
 import type { AntigravityQuotaState, ClaudeQuotaState, CodexQuotaState, GeminiCliQuotaState, KimiQuotaState } from '@/types/quota';
-import { buildProviderAnalytics } from './quotaAnalytics';
+import { buildProviderAnalytics, type QuotaWarningThresholds } from './quotaAnalytics';
+import { QuotaBucketFilesModal } from './QuotaBucketFilesModal';
+import {
+  buildSelectedQuotaBucketState,
+  getVisibleHistogramDatasets,
+  sanitizeHiddenDatasetIds,
+  toggleHiddenDatasetId,
+  type SelectedQuotaBucketState,
+} from './quotaAnalyticsViewState';
 import styles from '@/pages/QuotaPage.module.scss';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
@@ -35,6 +44,7 @@ interface QuotaAnalyticsViewProps {
   usageDetails: UsageDetail[];
   quotaMap?: Record<string, unknown>;
   loading?: boolean;
+  warningThresholds?: QuotaWarningThresholds;
 }
 
 const formatPercent = (value: number | null | undefined) =>
@@ -64,32 +74,62 @@ export function QuotaAnalyticsView({
   usageDetails,
   quotaMap,
   loading = false,
+  warningThresholds,
 }: QuotaAnalyticsViewProps) {
   const { t } = useTranslation();
   const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
 
   const analytics = useMemo(
-    () => buildProviderAnalytics(t, providerKey, files, usageDetails, quotaMap as QuotaMap | undefined),
-    [files, providerKey, quotaMap, t, usageDetails]
+    () =>
+      buildProviderAnalytics(
+        t,
+        providerKey,
+        files,
+        usageDetails,
+        quotaMap as QuotaMap | undefined,
+        warningThresholds
+      ),
+    [files, providerKey, quotaMap, t, usageDetails, warningThresholds]
   );
 
   const [hiddenDatasetIds, setHiddenDatasetIds] = useState<string[]>([]);
+  const [selectedBucketState, setSelectedBucketState] =
+    useState<SelectedQuotaBucketState | null>(null);
 
-  const visibleDatasets = useMemo(() => {
-    const hiddenSet = new Set(hiddenDatasetIds);
-    const datasets = analytics.histogramDatasets.filter((dataset) => !hiddenSet.has(dataset.id));
-    return datasets.length > 0 ? datasets : analytics.histogramDatasets;
-  }, [analytics.histogramDatasets, hiddenDatasetIds]);
+  const fileMap = useMemo(
+    () => new Map(files.map((file) => [file.name, file])),
+    [files]
+  );
+
+  const effectiveHiddenDatasetIds = useMemo(
+    () => sanitizeHiddenDatasetIds(hiddenDatasetIds, analytics.histogramDatasets),
+    [analytics.histogramDatasets, hiddenDatasetIds]
+  );
+
+  const selectedBucket = useMemo(() => {
+    if (!selectedBucketState) return null;
+    const stillVisible = analytics.histogramDatasets.some(
+      (dataset) =>
+        dataset.id === selectedBucketState.datasetId &&
+        !effectiveHiddenDatasetIds.includes(selectedBucketState.datasetId)
+    );
+    return stillVisible ? selectedBucketState : null;
+  }, [analytics.histogramDatasets, effectiveHiddenDatasetIds, selectedBucketState]);
+
+  const visibleDatasets = useMemo(
+    () => getVisibleHistogramDatasets(analytics.histogramDatasets, effectiveHiddenDatasetIds),
+    [analytics.histogramDatasets, effectiveHiddenDatasetIds]
+  );
+
+  const hiddenDatasetCount = effectiveHiddenDatasetIds.length;
 
   const toggleDatasetVisibility = (datasetId: string) => {
     setHiddenDatasetIds((prev) => {
-      if (prev.includes(datasetId)) {
-        return prev.filter((id) => id !== datasetId);
-      }
-      if (prev.length >= analytics.histogramDatasets.length - 1) {
-        return prev;
-      }
-      return [...prev, datasetId];
+      return toggleHiddenDatasetId(
+        sanitizeHiddenDatasetIds(prev, analytics.histogramDatasets),
+        datasetId,
+        analytics.histogramDatasets
+      );
     });
   };
 
@@ -117,6 +157,22 @@ export function QuotaAnalyticsView({
       responsive: true,
       maintainAspectRatio: false,
       indexAxis: 'y',
+      onClick: (_event, elements) => {
+        const selected = elements[0];
+        if (!selected) return;
+        setSelectedBucketState(
+          buildSelectedQuotaBucketState({
+            datasets: visibleDatasets,
+            datasetIndex: selected.datasetIndex,
+            bucketIndex: selected.index,
+            histogramLabels: analytics.histogramLabels,
+            fileMap,
+          })
+        );
+      },
+      onHover: (_event, elements, chart) => {
+        chart.canvas.style.cursor = elements.length > 0 ? 'pointer' : 'default';
+      },
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -150,7 +206,7 @@ export function QuotaAnalyticsView({
         duration: 420,
       },
     }),
-    [resolvedTheme, t]
+    [analytics.histogramLabels, fileMap, resolvedTheme, t, visibleDatasets]
   );
 
   const hasHistogram = analytics.histogramDatasets.length > 0;
@@ -172,18 +228,33 @@ export function QuotaAnalyticsView({
           <div className={styles.analyticsHint}>{t('quota_management.analytics.usage_only_histogram_hint')}</div>
         ) : hasHistogram ? (
           <>
-            <div className={styles.analyticsLegend} aria-label={t('quota_management.analytics.legend_label')}>
+          <div className={styles.analyticsLegend} aria-label={t('quota_management.analytics.legend_label')}>
+              <div className={styles.analyticsLegendSummary}>
+                <span className={styles.analyticsLegendSummaryText}>
+                  {t('quota_management.analytics.legend_visibility', {
+                    visible: visibleDatasets.length,
+                    total: analytics.histogramDatasets.length,
+                  })}
+                </span>
+                {hiddenDatasetCount > 0 ? (
+                  <Button variant="ghost" size="sm" onClick={() => setHiddenDatasetIds([])}>
+                    {t('quota_management.analytics.legend_reset')}
+                  </Button>
+                ) : null}
+              </div>
               {analytics.histogramDatasets.map((dataset) => (
-                <button
-                  key={dataset.id}
-                  type="button"
-                  className={`${styles.analyticsLegendItem} ${
-                    hiddenDatasetIds.includes(dataset.id) ? styles.analyticsLegendItemMuted : ''
-                  }`}
-                  onClick={() => toggleDatasetVisibility(dataset.id)}
-                  aria-pressed={!hiddenDatasetIds.includes(dataset.id)}
-                  title={t('quota_management.analytics.legend_toggle')}
-                >
+	                <button
+	                  key={dataset.id}
+	                  type="button"
+	                  className={`${styles.analyticsLegendItem} ${
+	                    effectiveHiddenDatasetIds.includes(dataset.id)
+	                      ? styles.analyticsLegendItemMuted
+	                      : ''
+	                  }`}
+	                  onClick={() => toggleDatasetVisibility(dataset.id)}
+	                  aria-pressed={!effectiveHiddenDatasetIds.includes(dataset.id)}
+	                  title={t('quota_management.analytics.legend_toggle')}
+	                >
                   <span
                     className={styles.analyticsLegendDot}
                     style={{ backgroundColor: dataset.color }}
@@ -207,6 +278,20 @@ export function QuotaAnalyticsView({
       </div>
 
       <div className={styles.analyticsSummaryPane}>
+        {analytics.warnings.length > 0 ? (
+          <div className={styles.analyticsWarningList}>
+            {analytics.warnings.map((warning) => (
+              <div
+                key={warning.id}
+                className={`${styles.analyticsWarningItem} ${
+                  warning.level === 'danger' ? styles.analyticsWarningDanger : styles.analyticsWarningWarn
+                }`}
+              >
+                {warning.message}
+              </div>
+            ))}
+          </div>
+        ) : null}
         <div className={styles.analyticsHealthGrid}>
           {analytics.mode === 'quota' ? (
             <>
@@ -319,6 +404,18 @@ export function QuotaAnalyticsView({
           ))}
         </div>
       </div>
+
+      <QuotaBucketFilesModal
+        open={selectedBucket !== null}
+        onClose={() => setSelectedBucketState(null)}
+        providerKey={providerKey}
+        providerLabel={providerLabel}
+        datasetId={selectedBucket?.datasetId ?? ''}
+        datasetLabel={selectedBucket?.datasetLabel ?? ''}
+        bucketIndex={selectedBucket?.bucketIndex ?? 0}
+        bucketLabel={selectedBucket?.bucketLabel ?? ''}
+        items={selectedBucket?.items ?? []}
+      />
     </div>
   );
 }

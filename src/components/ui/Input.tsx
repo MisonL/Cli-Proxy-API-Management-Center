@@ -10,6 +10,7 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 export function Input({ label, hint, error, rightElement, className = '', id, ...rest }: InputProps) {
   const generatedId = useId();
   const inputId = id ?? generatedId;
+  const inputName = rest.name ?? inputId;
   const hintId = hint ? `${inputId}-hint` : undefined;
   const errorId = error ? `${inputId}-error` : undefined;
   const describedBy = [rest['aria-describedby'], errorId, hintId].filter(Boolean).join(' ') || undefined;
@@ -20,6 +21,7 @@ export function Input({ label, hint, error, rightElement, className = '', id, ..
       <div style={{ position: 'relative' }}>
         <input
           id={inputId}
+          name={inputName}
           className={`input ${className}`.trim()}
           aria-invalid={Boolean(error) || rest['aria-invalid']}
           aria-describedby={describedBy}

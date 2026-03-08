@@ -107,7 +107,7 @@
 
 .tileSub {
   font-size: 12px;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   line-height: 1.4;
 }
 
@@ -140,6 +140,58 @@
   display: flex;
   justify-content: flex-end;
   align-items: center;
+}
+
+.selfCheckList {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+}
+
+.selfCheckItem {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: $spacing-md;
+  border-radius: $radius-lg;
+  border: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--bg-secondary) 82%, transparent);
+}
+
+.selfCheckHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.selfCheckTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-sm;
+  flex-wrap: wrap;
+}
+
+.selfCheckTitle {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.selfCheckMessage {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.selfCheckDetails {
+  font-size: 12px;
+  color: var(--text-primary);
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  word-break: break-all;
+}
+
+.selfCheckSuggestion {
+  font-size: 12px;
+  color: var(--text-tertiary);
 }
 
 .infoGrid {

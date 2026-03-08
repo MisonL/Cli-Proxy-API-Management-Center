@@ -22,6 +22,24 @@ const createTranslator = () =>
     if (key === 'quota_management.analytics.metric_extra_usage') {
       return 'Extra Usage';
     }
+    if (key === 'quota_management.analytics.warning_health_low') {
+      return 'health-low';
+    }
+    if (key === 'quota_management.analytics.warning_risk_near') {
+      return `risk-${options?.days ?? ''}`;
+    }
+    if (key === 'quota_management.analytics.warning_snapshot_low') {
+      return `snapshot-low-${options?.loaded}/${options?.total}`;
+    }
+    if (key === 'quota_management.analytics.warning_snapshot_failed') {
+      return `snapshot-failed-${options?.count ?? ''}`;
+    }
+    if (key === 'quota_management.analytics.warning_failure_rate_high') {
+      return `failure-high-${options?.rate ?? ''}`;
+    }
+    if (key === 'quota_management.analytics.warning_pool_inactive') {
+      return `pool-inactive-${options?.percent ?? ''}`;
+    }
     if (key === 'quota_management.analytics.window_5h') {
       return '5h';
     }
@@ -121,6 +139,14 @@ describe('buildProviderAnalytics', () => {
     expect(analytics.conservativeHealth).toBe(20);
     expect(analytics.averageHealth).not.toBeNull();
     expect(analytics.windowStats.find((item) => item.id === '5h')?.requestCount).toBe(2);
+    expect(analytics.warnings.length).toBeGreaterThan(0);
+    expect(analytics.warnings.some((item) => item.message === 'health-low')).toBe(true);
+    expect(
+      analytics.histogramDatasets.find((item) => item.id === 'five-hour')?.bucketItems[2]?.map((entry) => entry.fileName)
+    ).toEqual(['codex-a.json']);
+    expect(
+      analytics.histogramDatasets.find((item) => item.id === 'five-hour')?.bucketItems[7]?.map((entry) => entry.fileName)
+    ).toEqual(['codex-b.json']);
   });
 
   it('为无真实额度快照的渠道降级为 usage 统计', () => {
@@ -155,5 +181,55 @@ describe('buildProviderAnalytics', () => {
     expect(analytics.note).toBe('usage-only');
     expect(analytics.unavailableFiles).toBe(1);
     expect(analytics.disabledFiles).toBe(1);
+  });
+
+  it('支持按自定义阈值调整预警命中', () => {
+    const t = createTranslator();
+    const now = Date.now();
+    const files: AuthFileItem[] = [
+      { name: 'codex-a.json', type: 'codex', authIndex: 'auth-a' },
+    ];
+    const usageDetails: UsageDetail[] = [
+      {
+        timestamp: new Date(now - 60 * 60 * 1000).toISOString(),
+        auth_index: 'auth-a' as unknown as number,
+        source: '',
+        failed: false,
+        tokens: {
+          input_tokens: 10,
+          output_tokens: 5,
+          reasoning_tokens: 0,
+          cached_tokens: 0,
+          total_tokens: 15,
+        },
+        __timestampMs: now - 60 * 60 * 1000,
+      },
+    ];
+    const quotaMap: Record<string, CodexQuotaState> = {
+      'codex-a.json': {
+        status: 'success',
+        windows: [
+          {
+            id: 'five-hour',
+            label: '5h window',
+            usedPercent: 55,
+            resetLabel: 'soon',
+            resetAt: new Date(now + 10 * 60 * 60 * 1000).toISOString(),
+            windowHours: 5,
+          },
+        ],
+      },
+    };
+
+    const analytics = buildProviderAnalytics(t, 'codex', files, usageDetails, quotaMap, {
+      healthLowPercent: 60,
+      riskDays: 10,
+      snapshotCoveragePercent: 10,
+      failureRate24hPercent: 90,
+      activePoolPercent7d: 10,
+    });
+
+    expect(analytics.warnings.some((item) => item.message === 'health-low')).toBe(true);
+    expect(analytics.warnings.some((item) => item.message.startsWith('risk-'))).toBe(true);
   });
 });
