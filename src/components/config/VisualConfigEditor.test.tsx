@@ -75,4 +75,17 @@ describe('VisualConfigEditor', () => {
       usagePersistenceFile: customPath,
     });
   });
+
+  it('不再渲染 credentials-dir 输入框', () => {
+    render(
+      <VisualConfigEditor
+        values={buildValues()}
+        onChange={vi.fn()}
+      />
+    );
+
+    expect(
+      screen.queryByLabelText('config_management.visual.sections.auth.credentials_dir')
+    ).toBeNull();
+  });
 });

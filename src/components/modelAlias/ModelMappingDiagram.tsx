@@ -12,7 +12,7 @@ import {
 } from './ModelMappingDiagramModals';
 import type {
   AliasNode,
-  AuthFileModelItem,
+  CredentialModelItem,
   ContextMenuState,
   DiagramLine,
   SourceNode
@@ -21,7 +21,7 @@ import styles from './ModelMappingDiagram.module.scss';
 
 export interface ModelMappingDiagramProps {
   modelAlias: Record<string, OAuthModelAliasEntry[]>;
-  allProviderModels?: Record<string, AuthFileModelItem[]>;
+  allProviderModels?: Record<string, CredentialModelItem[]>;
   onUpdate?: (provider: string, sourceModel: string, newAlias: string) => void;
   onDeleteLink?: (provider: string, sourceModel: string, alias: string) => void;
   onToggleFork?: (provider: string, sourceModel: string, alias: string, fork: boolean) => void;

@@ -1,4 +1,4 @@
-import type { AuthFileItem } from '@/types/authFile';
+import type { CredentialItem } from '@/types/credential';
 import type { AnalyticsHistogramDataset } from './quotaAnalytics';
 
 export type SelectedQuotaBucketState = {
@@ -7,10 +7,11 @@ export type SelectedQuotaBucketState = {
   bucketIndex: number;
   bucketLabel: string;
   items: Array<{
+    credentialId?: string;
     fileName: string;
     remainingPercent: number;
     resetAt?: string;
-    file?: AuthFileItem;
+    file?: CredentialItem;
   }>;
 };
 
@@ -59,7 +60,7 @@ export const buildSelectedQuotaBucketState = ({
   datasetIndex: number;
   bucketIndex: number;
   histogramLabels: string[];
-  fileMap: Map<string, AuthFileItem>;
+  fileMap: Map<string, CredentialItem>;
 }): SelectedQuotaBucketState | null => {
   const dataset = datasets[datasetIndex];
   if (!dataset) return null;

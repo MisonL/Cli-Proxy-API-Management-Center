@@ -72,4 +72,28 @@ usage-persistence-file: /workspace/usage-backups/custom.json
 
     expect(errors.usagePersistenceFile).toBe('required_when_enabled');
   });
+
+  it('读取到 retired credentials-dir 时会报错', () => {
+    const { result } = renderHook(() => useVisualConfig());
+
+    let loadResult: ReturnType<typeof result.current.loadVisualValuesFromYaml> | undefined;
+    act(() => {
+      loadResult = result.current.loadVisualValuesFromYaml('credentials-dir: /tmp/legacy-auths\n');
+    });
+
+    expect(loadResult).toEqual({
+      ok: false,
+      error:
+        'config key credentials-dir is no longer supported; migrate legacy JSON credentials first and remove credentials-dir',
+    });
+  });
+
+  it('写回 YAML 时不会重新生成 retired credentials-dir', () => {
+    const { result } = renderHook(() => useVisualConfig());
+
+    const nextYaml = result.current.applyVisualChangesToYaml('credentials-dir: /tmp/legacy-auths\n');
+    const parsed = (parseYaml(nextYaml) as Record<string, unknown>) ?? {};
+
+    expect(parsed['credentials-dir']).toBeUndefined();
+  });
 });

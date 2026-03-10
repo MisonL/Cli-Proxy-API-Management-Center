@@ -5,11 +5,11 @@ import {
   collectUsageDetails,
   buildCandidateUsageSourceIds,
   formatCompactNumber,
-  normalizeAuthIndex
+  normalizeAuthIndex,
 } from '@/utils/usage';
-import { authFilesApi } from '@/services/api/authFiles';
+import { credentialsApi } from '@/services/api/credentials';
 import type { GeminiKeyConfig, ProviderKeyConfig, OpenAIProviderConfig } from '@/types';
-import type { AuthFileItem } from '@/types/authFile';
+import type { CredentialItem } from '@/types/credential';
 import type { CredentialInfo } from '@/types/sourceInfo';
 import type { UsagePayload } from './hooks/useUsageData';
 import styles from '@/pages/UsagePage.module.scss';
@@ -49,21 +49,20 @@ export function CredentialStatsCard({
   openaiProviders,
 }: CredentialStatsCardProps) {
   const { t } = useTranslation();
-  const [authFileMap, setAuthFileMap] = useState<Map<string, CredentialInfo>>(new Map());
+  const [credentialMap, setCredentialMap] = useState<Map<string, CredentialInfo>>(new Map());
 
-  // Fetch auth files for auth_index-based matching
+  // Fetch credential files for selection_key-based matching
   useEffect(() => {
     let cancelled = false;
-    authFilesApi
+    credentialsApi
       .list()
       .then((res) => {
         if (cancelled) return;
-        const files = Array.isArray(res) ? res : (res as { files?: AuthFileItem[] })?.files;
+        const files = Array.isArray(res) ? res : (res as { files?: CredentialItem[] })?.files;
         if (!Array.isArray(files)) return;
         const map = new Map<string, CredentialInfo>();
         files.forEach((file) => {
-          const rawAuthIndex = file['auth_index'] ?? file.authIndex;
-          const key = normalizeAuthIndex(rawAuthIndex);
+          const key = normalizeAuthIndex(file.selectionKey);
           if (key) {
             map.set(key, {
               name: file.name || key,
@@ -71,13 +70,15 @@ export function CredentialStatsCard({
             });
           }
         });
-        setAuthFileMap(map);
+        setCredentialMap(map);
       })
       .catch(() => {});
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // Aggregate rows: all from bySource only (no separate byAuthIndex rows to avoid duplicates).
+  // Aggregate rows: all from bySource only (no separate bySelectionKey rows to avoid duplicates).
   // Auth files are used purely for name resolution of unmatched source IDs.
   const rows = useMemo((): CredentialRow[] => {
     if (!usage) return [];
@@ -85,25 +86,25 @@ export function CredentialStatsCard({
     const bySource: Record<string, CredentialBucket> = {};
     const result: CredentialRow[] = [];
     const consumedSourceIds = new Set<string>();
-    const authIndexToRowIndex = new Map<string, number>();
-    const sourceToAuthIndex = new Map<string, string>();
-    const sourceToAuthFile = new Map<string, CredentialInfo>();
-    const fallbackByAuthIndex = new Map<string, CredentialBucket>();
+    const selectionKeyToRowIndex = new Map<string, number>();
+    const sourceToSelectionKey = new Map<string, string>();
+    const sourceToCredential = new Map<string, CredentialInfo>();
+    const fallbackBySelectionKey = new Map<string, CredentialBucket>();
 
     details.forEach((detail) => {
-      const authIdx = normalizeAuthIndex(detail.auth_index);
+      const selectionKey = normalizeAuthIndex(detail.selection_key);
       const source = detail.source;
       const isFailed = detail.failed === true;
 
       if (!source) {
-        if (!authIdx) return;
-        const fallback = fallbackByAuthIndex.get(authIdx) ?? { success: 0, failure: 0 };
+        if (!selectionKey) return;
+        const fallback = fallbackBySelectionKey.get(selectionKey) ?? { success: 0, failure: 0 };
         if (isFailed) {
           fallback.failure += 1;
         } else {
           fallback.success += 1;
         }
-        fallbackByAuthIndex.set(authIdx, fallback);
+        fallbackBySelectionKey.set(selectionKey, fallback);
         return;
       }
 
@@ -115,12 +116,12 @@ export function CredentialStatsCard({
       }
       bySource[source] = bucket;
 
-      if (authIdx && !sourceToAuthIndex.has(source)) {
-        sourceToAuthIndex.set(source, authIdx);
+      if (selectionKey && !sourceToSelectionKey.has(source)) {
+        sourceToSelectionKey.set(source, selectionKey);
       }
-      if (authIdx && !sourceToAuthFile.has(source)) {
-        const mapped = authFileMap.get(authIdx);
-        if (mapped) sourceToAuthFile.set(source, mapped);
+      if (selectionKey && !sourceToCredential.has(source)) {
+        const mapped = credentialMap.get(selectionKey);
+        if (mapped) sourceToCredential.set(source, mapped);
       }
     });
 
@@ -139,7 +140,7 @@ export function CredentialStatsCard({
       prefix: string | undefined,
       name: string,
       type: string,
-      rowKey: string,
+      rowKey: string
     ) => {
       const candidates = buildCandidateUsageSourceIds({ apiKey, prefix });
       let success = 0;
@@ -168,13 +169,35 @@ export function CredentialStatsCard({
 
     // Provider rows — one row per config, stats merged across all its candidate source IDs
     geminiKeys.forEach((c, i) =>
-      addConfigRow(c.apiKey, c.prefix, c.prefix?.trim() || `Gemini #${i + 1}`, 'gemini', `gemini:${i}`));
+      addConfigRow(
+        c.apiKey,
+        c.prefix,
+        c.prefix?.trim() || `Gemini #${i + 1}`,
+        'gemini',
+        `gemini:${i}`
+      )
+    );
     claudeConfigs.forEach((c, i) =>
-      addConfigRow(c.apiKey, c.prefix, c.prefix?.trim() || `Claude #${i + 1}`, 'claude', `claude:${i}`));
+      addConfigRow(
+        c.apiKey,
+        c.prefix,
+        c.prefix?.trim() || `Claude #${i + 1}`,
+        'claude',
+        `claude:${i}`
+      )
+    );
     codexConfigs.forEach((c, i) =>
-      addConfigRow(c.apiKey, c.prefix, c.prefix?.trim() || `Codex #${i + 1}`, 'codex', `codex:${i}`));
+      addConfigRow(c.apiKey, c.prefix, c.prefix?.trim() || `Codex #${i + 1}`, 'codex', `codex:${i}`)
+    );
     vertexConfigs.forEach((c, i) =>
-      addConfigRow(c.apiKey, c.prefix, c.prefix?.trim() || `Vertex #${i + 1}`, 'vertex', `vertex:${i}`));
+      addConfigRow(
+        c.apiKey,
+        c.prefix,
+        c.prefix?.trim() || `Vertex #${i + 1}`,
+        'vertex',
+        `vertex:${i}`
+      )
+    );
     // OpenAI compatibility providers — one row per provider, merged across all apiKey entries (prefix counted once).
     openaiProviders.forEach((provider, providerIndex) => {
       const prefix = provider.prefix;
@@ -211,40 +234,40 @@ export function CredentialStatsCard({
       }
     });
 
-    // Remaining unmatched bySource entries — resolve name from auth files if possible
+    // Remaining unmatched bySource entries — resolve name from credential files if possible
     Object.entries(bySource).forEach(([key, bucket]) => {
       if (consumedSourceIds.has(key)) return;
       const total = bucket.success + bucket.failure;
-      const authFile = sourceToAuthFile.get(key);
+      const credential = sourceToCredential.get(key);
       const row = {
         key,
-        displayName: authFile?.name || (key.startsWith('t:') ? key.slice(2) : key),
-        type: authFile?.type || '',
+        displayName: credential?.name || (key.startsWith('t:') ? key.slice(2) : key),
+        type: credential?.type || '',
         success: bucket.success,
         failure: bucket.failure,
         total,
         successRate: total > 0 ? (bucket.success / total) * 100 : 100,
       };
       const rowIndex = result.push(row) - 1;
-      const authIdx = sourceToAuthIndex.get(key);
-      if (authIdx && !authIndexToRowIndex.has(authIdx)) {
-        authIndexToRowIndex.set(authIdx, rowIndex);
+      const selectionKey = sourceToSelectionKey.get(key);
+      if (selectionKey && !selectionKeyToRowIndex.has(selectionKey)) {
+        selectionKeyToRowIndex.set(selectionKey, rowIndex);
       }
     });
 
-    // Include requests that have auth_index but missing source.
-    fallbackByAuthIndex.forEach((bucket, authIdx) => {
+    // Include requests that have selection_key but missing source.
+    fallbackBySelectionKey.forEach((bucket, selectionKey) => {
       if (bucket.success + bucket.failure === 0) return;
 
-      const mapped = authFileMap.get(authIdx);
-      let targetRowIndex = authIndexToRowIndex.get(authIdx);
+      const mapped = credentialMap.get(selectionKey);
+      let targetRowIndex = selectionKeyToRowIndex.get(selectionKey);
       if (targetRowIndex === undefined && mapped) {
         const matchedIndex = result.findIndex(
           (row) => row.displayName === mapped.name && row.type === mapped.type
         );
         if (matchedIndex >= 0) {
           targetRowIndex = matchedIndex;
-          authIndexToRowIndex.set(authIdx, matchedIndex);
+          selectionKeyToRowIndex.set(selectionKey, matchedIndex);
         }
       }
 
@@ -254,20 +277,29 @@ export function CredentialStatsCard({
       }
 
       const total = bucket.success + bucket.failure;
-      const rowIndex = result.push({
-        key: `auth:${authIdx}`,
-        displayName: mapped?.name || authIdx,
-        type: mapped?.type || '',
-        success: bucket.success,
-        failure: bucket.failure,
-        total,
-        successRate: (bucket.success / total) * 100
-      }) - 1;
-      authIndexToRowIndex.set(authIdx, rowIndex);
+      const rowIndex =
+        result.push({
+          key: `auth:${selectionKey}`,
+          displayName: mapped?.name || selectionKey,
+          type: mapped?.type || '',
+          success: bucket.success,
+          failure: bucket.failure,
+          total,
+          successRate: (bucket.success / total) * 100,
+        }) - 1;
+      selectionKeyToRowIndex.set(selectionKey, rowIndex);
     });
 
     return result.sort((a, b) => b.total - a.total);
-  }, [usage, geminiKeys, claudeConfigs, codexConfigs, vertexConfigs, openaiProviders, authFileMap]);
+  }, [
+    usage,
+    geminiKeys,
+    claudeConfigs,
+    codexConfigs,
+    vertexConfigs,
+    openaiProviders,
+    credentialMap,
+  ]);
 
   return (
     <Card title={t('usage_stats.credential_stats')} className={styles.detailsFixedCard}>
@@ -275,51 +307,51 @@ export function CredentialStatsCard({
         <div className={styles.hint}>{t('common.loading')}</div>
       ) : rows.length > 0 ? (
         <div className={styles.detailsScroll}>
-        <div className={styles.tableWrapper}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>{t('usage_stats.credential_name')}</th>
-                <th>{t('usage_stats.requests_count')}</th>
-                <th>{t('usage_stats.success_rate')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.key}>
-                  <td className={styles.modelCell}>
-                    <span>{row.displayName}</span>
-                    {row.type && (
-                      <span className={styles.credentialType}>{row.type}</span>
-                    )}
-                  </td>
-                  <td>
-                    <span className={styles.requestCountCell}>
-                      <span>{formatCompactNumber(row.total)}</span>
-                      <span className={styles.requestBreakdown}>
-                        (<span className={styles.statSuccess}>{row.success.toLocaleString()}</span>{' '}
-                        <span className={styles.statFailure}>{row.failure.toLocaleString()}</span>)
-                      </span>
-                    </span>
-                  </td>
-                  <td>
-                    <span
-                      className={
-                        row.successRate >= 95
-                          ? styles.statSuccess
-                          : row.successRate >= 80
-                            ? styles.statNeutral
-                            : styles.statFailure
-                      }
-                    >
-                      {row.successRate.toFixed(1)}%
-                    </span>
-                  </td>
+          <div className={styles.tableWrapper}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>{t('usage_stats.credential_name')}</th>
+                  <th>{t('usage_stats.requests_count')}</th>
+                  <th>{t('usage_stats.success_rate')}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.key}>
+                    <td className={styles.modelCell}>
+                      <span>{row.displayName}</span>
+                      {row.type && <span className={styles.credentialType}>{row.type}</span>}
+                    </td>
+                    <td>
+                      <span className={styles.requestCountCell}>
+                        <span>{formatCompactNumber(row.total)}</span>
+                        <span className={styles.requestBreakdown}>
+                          (
+                          <span className={styles.statSuccess}>{row.success.toLocaleString()}</span>{' '}
+                          <span className={styles.statFailure}>{row.failure.toLocaleString()}</span>
+                          )
+                        </span>
+                      </span>
+                    </td>
+                    <td>
+                      <span
+                        className={
+                          row.successRate >= 95
+                            ? styles.statSuccess
+                            : row.successRate >= 80
+                              ? styles.statNeutral
+                              : styles.statFailure
+                        }
+                      >
+                        {row.successRate.toFixed(1)}%
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : (
         <div className={styles.hint}>{t('usage_stats.no_data')}</div>

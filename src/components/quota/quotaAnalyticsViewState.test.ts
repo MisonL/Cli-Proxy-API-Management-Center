@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AuthFileItem } from '@/types/authFile';
+import type { CredentialItem } from '@/types/credential';
 import {
   buildSelectedQuotaBucketState,
   getVisibleHistogramDatasets,
@@ -41,7 +41,7 @@ describe('quotaAnalyticsViewState', () => {
   });
 
   it('根据点击位置构建桶明细', () => {
-    const fileMap = new Map<string, AuthFileItem>([
+    const fileMap = new Map<string, CredentialItem>([
       ['a.json', { name: 'a.json', type: 'codex' }],
     ]);
 

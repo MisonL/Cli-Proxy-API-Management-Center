@@ -22,7 +22,7 @@ vi.mock('react-i18next', () => ({
         'dashboard.edit_settings': '编辑设置',
         'nav.config_management': '配置面板',
         'nav.ai_providers': 'AI 提供商',
-        'nav.auth_files': '认证文件',
+        'nav.credentials': '凭证',
         'common.connected': '已连接',
         'common.connecting': '连接中',
         'common.disconnected': '未连接',
@@ -57,7 +57,7 @@ vi.mock('@/services/api', () => ({
     getClaudeConfigs: vi.fn(async () => []),
     getOpenAIProviders: vi.fn(async () => []),
   },
-  authFilesApi: { list: vi.fn(async () => ({ files: [] })) },
+  credentialsApi: { list: vi.fn(async () => ({ files: [] })) },
 }));
 
 vi.mock('@/stores', () => ({

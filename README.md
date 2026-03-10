@@ -80,7 +80,7 @@ See `api.md` for the full authentication rules, server-side limits, and edge cas
   - Gemini/Codex/Claude/Vertex key entries (base URL, headers, proxy, model aliases, excluded models, prefix).
   - OpenAI-compatible providers (multiple API keys, custom headers, model alias import via `/v1/models`, optional browser-side "chat/completions" test).
   - Ampcode integration (upstream URL/key, force mappings, model mapping table).
-- **Auth Files**: upload/download/delete JSON credentials, filter/search/pagination, runtime-only indicators, view supported models per credential (when the server supports it), manage OAuth excluded models (supports `*` wildcards), configure OAuth model alias mappings.
+- **Credentials**: upload/download/delete JSON credentials, filter/search/pagination, runtime-only indicators, view supported models per credential (when the server supports it), manage OAuth excluded models (supports `*` wildcards), configure OAuth model alias mappings.
 - **OAuth**: start OAuth/device flows for supported providers, poll status, optionally submit callback `redirect_url`; includes iFlow cookie import.
 - **Quota Management**: manage quota limits and usage for Claude, Antigravity, Codex, Gemini CLI, and other providers.
 - **Usage**: requests/tokens charts (hour/day), per-API & per-model breakdown, cached/reasoning token breakdown, RPM/TPM window, optional cost estimation with locally-saved model pricing.
@@ -143,7 +143,7 @@ Dev builds may use `git describe --tags --always`; production builds should pass
 - **Can’t connect / 401**: confirm the API address and management key; remote access may require enabling remote management in the server config.
 - **Repeated auth failures**: the server may temporarily block remote IPs.
 - **Logs page missing**: enable “Logging to file” in Basic Settings; the navigation item is shown only when file logging is enabled.
-- **Some features show “unsupported”**: the backend may be too old or the endpoint is disabled/absent (common for model lists per auth file, excluded models, logs).
+- **Some features show “unsupported”**: the backend may be too old or the endpoint is disabled/absent (common for model lists per credential file, excluded models, logs).
 - **OpenAI provider test fails**: the test runs in the browser and depends on network/CORS of the provider endpoint; a failure here does not always mean the server cannot reach it.
 
 ## Development

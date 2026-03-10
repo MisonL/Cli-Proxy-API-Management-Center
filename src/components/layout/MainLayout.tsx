@@ -40,7 +40,7 @@ import type { Theme } from '@/types';
 const sidebarIcons: Record<string, ReactNode> = {
   dashboard: <IconLayoutDashboard size={18} />,
   aiProviders: <IconBot size={18} />,
-  authFiles: <IconFileText size={18} />,
+  credentials: <IconFileText size={18} />,
   oauth: <IconShield size={18} />,
   quota: <IconTimer size={18} />,
   usage: <IconChartLine size={18} />,
@@ -434,7 +434,7 @@ export function MainLayout() {
     { path: '/', label: t('nav.dashboard'), icon: sidebarIcons.dashboard },
     { path: '/config', label: t('nav.config_management'), icon: sidebarIcons.config },
     { path: '/ai-providers', label: t('nav.ai_providers'), icon: sidebarIcons.aiProviders },
-    { path: '/auth-files', label: t('nav.auth_files'), icon: sidebarIcons.authFiles },
+    { path: '/credentials', label: t('nav.credentials'), icon: sidebarIcons.credentials },
     { path: '/oauth', label: t('nav.oauth', { defaultValue: 'OAuth' }), icon: sidebarIcons.oauth },
     { path: '/quota', label: t('nav.quota_management'), icon: sidebarIcons.quota },
     { path: '/usage', label: t('nav.usage_stats'), icon: sidebarIcons.usage },
@@ -463,13 +463,13 @@ export function MainLayout() {
       }
     }
 
-    const authFilesIndex = navOrder.indexOf('/auth-files');
-    if (authFilesIndex !== -1) {
-      if (normalizedPath === '/auth-files') return authFilesIndex;
-      if (normalizedPath.startsWith('/auth-files/')) {
-        if (normalizedPath.startsWith('/auth-files/oauth-excluded')) return authFilesIndex + 0.1;
-        if (normalizedPath.startsWith('/auth-files/oauth-model-alias')) return authFilesIndex + 0.2;
-        return authFilesIndex + 0.05;
+    const credentialsIndex = navOrder.indexOf('/credentials');
+    if (credentialsIndex !== -1) {
+      if (normalizedPath === '/credentials') return credentialsIndex;
+      if (normalizedPath.startsWith('/credentials/')) {
+        if (normalizedPath.startsWith('/credentials/oauth-excluded')) return credentialsIndex + 0.1;
+        if (normalizedPath.startsWith('/credentials/oauth-model-alias')) return credentialsIndex + 0.2;
+        return credentialsIndex + 0.05;
       }
     }
 
@@ -490,11 +490,11 @@ export function MainLayout() {
 
     const from = normalize(fromPathname);
     const to = normalize(toPathname);
-    const isAuthFiles = (pathname: string) =>
-      pathname === '/auth-files' || pathname.startsWith('/auth-files/');
+    const isCredentials = (pathname: string) =>
+      pathname === '/credentials' || pathname.startsWith('/credentials/');
     const isAiProviders = (pathname: string) =>
       pathname === '/ai-providers' || pathname.startsWith('/ai-providers/');
-    if (isAuthFiles(from) && isAuthFiles(to)) return 'ios';
+    if (isCredentials(from) && isCredentials(to)) return 'ios';
     if (isAiProviders(from) && isAiProviders(to)) return 'ios';
     return 'vertical';
   }, []);

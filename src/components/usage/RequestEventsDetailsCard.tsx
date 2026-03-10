@@ -4,16 +4,12 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Select } from '@/components/ui/Select';
-import { authFilesApi } from '@/services/api/authFiles';
+import { credentialsApi } from '@/services/api/credentials';
 import type { GeminiKeyConfig, ProviderKeyConfig, OpenAIProviderConfig } from '@/types';
-import type { AuthFileItem } from '@/types/authFile';
+import type { CredentialItem } from '@/types/credential';
 import type { CredentialInfo } from '@/types/sourceInfo';
 import { buildSourceInfoMap, resolveSourceDisplay } from '@/utils/sourceResolver';
-import {
-  collectUsageDetails,
-  extractTotalTokens,
-  normalizeAuthIndex
-} from '@/utils/usage';
+import { collectUsageDetails, extractTotalTokens, normalizeAuthIndex } from '@/utils/usage';
 import { downloadBlob } from '@/utils/download';
 import styles from '@/pages/UsagePage.module.scss';
 
@@ -29,7 +25,7 @@ type RequestEventRow = {
   sourceRaw: string;
   source: string;
   sourceType: string;
-  authIndex: string;
+  selectionKey: string;
   failed: boolean;
   inputTokens: number;
   outputTokens: number;
@@ -68,33 +64,33 @@ export function RequestEventsDetailsCard({
   claudeConfigs,
   codexConfigs,
   vertexConfigs,
-  openaiProviders
+  openaiProviders,
 }: RequestEventsDetailsCardProps) {
   const { t, i18n } = useTranslation();
 
   const [modelFilter, setModelFilter] = useState(ALL_FILTER);
   const [sourceFilter, setSourceFilter] = useState(ALL_FILTER);
-  const [authIndexFilter, setAuthIndexFilter] = useState(ALL_FILTER);
-  const [authFileMap, setAuthFileMap] = useState<Map<string, CredentialInfo>>(new Map());
+  const [selectionKeyFilter, setSelectionKeyFilter] = useState(ALL_FILTER);
+  const [credentialMap, setCredentialMap] = useState<Map<string, CredentialInfo>>(new Map());
 
   useEffect(() => {
     let cancelled = false;
-    authFilesApi
+    credentialsApi
       .list()
       .then((res) => {
         if (cancelled) return;
-        const files = Array.isArray(res) ? res : (res as { files?: AuthFileItem[] })?.files;
+        const files = Array.isArray(res) ? res : (res as { files?: CredentialItem[] })?.files;
         if (!Array.isArray(files)) return;
         const map = new Map<string, CredentialInfo>();
         files.forEach((file) => {
-          const key = normalizeAuthIndex(file['auth_index'] ?? file.authIndex);
+          const key = normalizeAuthIndex(file.selectionKey);
           if (!key) return;
           map.set(key, {
             name: file.name || key,
-            type: (file.type || file.provider || '').toString()
+            type: (file.type || file.provider || '').toString(),
           });
         });
-        setAuthFileMap(map);
+        setCredentialMap(map);
       })
       .catch(() => {});
     return () => {
@@ -126,12 +122,17 @@ export function RequestEventsDetailsCard({
             : Date.parse(timestamp);
         const date = Number.isNaN(timestampMs) ? null : new Date(timestampMs);
         const sourceRaw = String(detail.source ?? '').trim();
-        const authIndexRaw = detail.auth_index as unknown;
-        const authIndex =
-          authIndexRaw === null || authIndexRaw === undefined || authIndexRaw === ''
+        const selectionKeyRaw = detail.selection_key as unknown;
+        const selectionKey =
+          selectionKeyRaw === null || selectionKeyRaw === undefined || selectionKeyRaw === ''
             ? '-'
-            : String(authIndexRaw);
-        const sourceInfo = resolveSourceDisplay(sourceRaw, authIndexRaw, sourceInfoMap, authFileMap);
+            : String(selectionKeyRaw);
+        const sourceInfo = resolveSourceDisplay(
+          sourceRaw,
+          selectionKeyRaw,
+          sourceInfoMap,
+          credentialMap
+        );
         const source = sourceInfo.displayName;
         const sourceType = sourceInfo.type;
         const model = String(detail.__modelName ?? '').trim() || '-';
@@ -148,7 +149,7 @@ export function RequestEventsDetailsCard({
         );
 
         return {
-          id: `${timestamp}-${model}-${sourceRaw || source}-${authIndex}-${index}`,
+          id: `${timestamp}-${model}-${sourceRaw || source}-${selectionKey}-${index}`,
           timestamp,
           timestampMs: Number.isNaN(timestampMs) ? 0 : timestampMs,
           timestampLabel: date ? date.toLocaleString(i18n.language) : timestamp || '-',
@@ -156,25 +157,25 @@ export function RequestEventsDetailsCard({
           sourceRaw: sourceRaw || '-',
           source,
           sourceType,
-          authIndex,
+          selectionKey,
           failed: detail.failed === true,
           inputTokens,
           outputTokens,
           reasoningTokens,
           cachedTokens,
-          totalTokens
+          totalTokens,
         };
       })
       .sort((a, b) => b.timestampMs - a.timestampMs);
-  }, [authFileMap, i18n.language, sourceInfoMap, usage]);
+  }, [credentialMap, i18n.language, sourceInfoMap, usage]);
 
   const modelOptions = useMemo(
     () => [
       { value: ALL_FILTER, label: t('usage_stats.filter_all') },
       ...Array.from(new Set(rows.map((row) => row.model))).map((model) => ({
         value: model,
-        label: model
-      }))
+        label: model,
+      })),
     ],
     [rows, t]
   );
@@ -184,19 +185,19 @@ export function RequestEventsDetailsCard({
       { value: ALL_FILTER, label: t('usage_stats.filter_all') },
       ...Array.from(new Set(rows.map((row) => row.source))).map((source) => ({
         value: source,
-        label: source
-      }))
+        label: source,
+      })),
     ],
     [rows, t]
   );
 
-  const authIndexOptions = useMemo(
+  const selectionKeyOptions = useMemo(
     () => [
       { value: ALL_FILTER, label: t('usage_stats.filter_all') },
-      ...Array.from(new Set(rows.map((row) => row.authIndex))).map((authIndex) => ({
-        value: authIndex,
-        label: authIndex
-      }))
+      ...Array.from(new Set(rows.map((row) => row.selectionKey))).map((selectionKey) => ({
+        value: selectionKey,
+        label: selectionKey,
+      })),
     ],
     [rows, t]
   );
@@ -209,43 +210,43 @@ export function RequestEventsDetailsCard({
     () => new Set(sourceOptions.map((option) => option.value)),
     [sourceOptions]
   );
-  const authIndexOptionSet = useMemo(
-    () => new Set(authIndexOptions.map((option) => option.value)),
-    [authIndexOptions]
+  const selectionKeyOptionSet = useMemo(
+    () => new Set(selectionKeyOptions.map((option) => option.value)),
+    [selectionKeyOptions]
   );
 
   const effectiveModelFilter = modelOptionSet.has(modelFilter) ? modelFilter : ALL_FILTER;
   const effectiveSourceFilter = sourceOptionSet.has(sourceFilter) ? sourceFilter : ALL_FILTER;
-  const effectiveAuthIndexFilter = authIndexOptionSet.has(authIndexFilter)
-    ? authIndexFilter
+  const effectiveSelectionKeyFilter = selectionKeyOptionSet.has(selectionKeyFilter)
+    ? selectionKeyFilter
     : ALL_FILTER;
 
   const filteredRows = useMemo(
     () =>
       rows.filter((row) => {
-        const modelMatched = effectiveModelFilter === ALL_FILTER || row.model === effectiveModelFilter;
-        const sourceMatched = effectiveSourceFilter === ALL_FILTER || row.source === effectiveSourceFilter;
-        const authIndexMatched =
-          effectiveAuthIndexFilter === ALL_FILTER || row.authIndex === effectiveAuthIndexFilter;
-        return modelMatched && sourceMatched && authIndexMatched;
+        const modelMatched =
+          effectiveModelFilter === ALL_FILTER || row.model === effectiveModelFilter;
+        const sourceMatched =
+          effectiveSourceFilter === ALL_FILTER || row.source === effectiveSourceFilter;
+        const selectionKeyMatched =
+          effectiveSelectionKeyFilter === ALL_FILTER ||
+          row.selectionKey === effectiveSelectionKeyFilter;
+        return modelMatched && sourceMatched && selectionKeyMatched;
       }),
-    [effectiveAuthIndexFilter, effectiveModelFilter, effectiveSourceFilter, rows]
+    [effectiveSelectionKeyFilter, effectiveModelFilter, effectiveSourceFilter, rows]
   );
 
-  const renderedRows = useMemo(
-    () => filteredRows.slice(0, MAX_RENDERED_EVENTS),
-    [filteredRows]
-  );
+  const renderedRows = useMemo(() => filteredRows.slice(0, MAX_RENDERED_EVENTS), [filteredRows]);
 
   const hasActiveFilters =
     effectiveModelFilter !== ALL_FILTER ||
     effectiveSourceFilter !== ALL_FILTER ||
-    effectiveAuthIndexFilter !== ALL_FILTER;
+    effectiveSelectionKeyFilter !== ALL_FILTER;
 
   const handleClearFilters = () => {
     setModelFilter(ALL_FILTER);
     setSourceFilter(ALL_FILTER);
-    setAuthIndexFilter(ALL_FILTER);
+    setSelectionKeyFilter(ALL_FILTER);
   };
 
   const handleExportCsv = () => {
@@ -256,13 +257,13 @@ export function RequestEventsDetailsCard({
       'model',
       'source',
       'source_raw',
-      'auth_index',
+      'selection_key',
       'result',
       'input_tokens',
       'output_tokens',
       'reasoning_tokens',
       'cached_tokens',
-      'total_tokens'
+      'total_tokens',
     ];
 
     const csvRows = filteredRows.map((row) =>
@@ -271,13 +272,13 @@ export function RequestEventsDetailsCard({
         row.model,
         row.source,
         row.sourceRaw,
-        row.authIndex,
+        row.selectionKey,
         row.failed ? 'failed' : 'success',
         row.inputTokens,
         row.outputTokens,
         row.reasoningTokens,
         row.cachedTokens,
-        row.totalTokens
+        row.totalTokens,
       ]
         .map((value) => encodeCsv(value))
         .join(',')
@@ -287,7 +288,7 @@ export function RequestEventsDetailsCard({
     const fileTime = new Date().toISOString().replace(/[:.]/g, '-');
     downloadBlob({
       filename: `usage-events-${fileTime}.csv`,
-      blob: new Blob([content], { type: 'text/csv;charset=utf-8' })
+      blob: new Blob([content], { type: 'text/csv;charset=utf-8' }),
     });
   };
 
@@ -299,22 +300,22 @@ export function RequestEventsDetailsCard({
       model: row.model,
       source: row.source,
       source_raw: row.sourceRaw,
-      auth_index: row.authIndex,
+      selection_key: row.selectionKey,
       failed: row.failed,
       tokens: {
         input_tokens: row.inputTokens,
         output_tokens: row.outputTokens,
         reasoning_tokens: row.reasoningTokens,
         cached_tokens: row.cachedTokens,
-        total_tokens: row.totalTokens
-      }
+        total_tokens: row.totalTokens,
+      },
     }));
 
     const content = JSON.stringify(payload, null, 2);
     const fileTime = new Date().toISOString().replace(/[:.]/g, '-');
     downloadBlob({
       filename: `usage-events-${fileTime}.json`,
-      blob: new Blob([content], { type: 'application/json;charset=utf-8' })
+      blob: new Blob([content], { type: 'application/json;charset=utf-8' }),
     });
   };
 
@@ -382,9 +383,9 @@ export function RequestEventsDetailsCard({
             {t('usage_stats.request_events_filter_auth_index')}
           </span>
           <Select
-            value={effectiveAuthIndexFilter}
-            options={authIndexOptions}
-            onChange={setAuthIndexFilter}
+            value={effectiveSelectionKeyFilter}
+            options={selectionKeyOptions}
+            onChange={setSelectionKeyFilter}
             className={styles.requestEventsSelect}
             ariaLabel={t('usage_stats.request_events_filter_auth_index')}
             fullWidth={false}
@@ -412,7 +413,7 @@ export function RequestEventsDetailsCard({
               <span className={styles.requestEventsLimitHint}>
                 {t('usage_stats.request_events_limit_hint', {
                   shown: MAX_RENDERED_EVENTS,
-                  total: filteredRows.length
+                  total: filteredRows.length,
                 })}
               </span>
             )}
@@ -447,12 +448,16 @@ export function RequestEventsDetailsCard({
                         <span className={styles.credentialType}>{row.sourceType}</span>
                       )}
                     </td>
-                    <td className={styles.requestEventsAuthIndex} title={row.authIndex}>
-                      {row.authIndex}
+                    <td className={styles.requestEventsAuthIndex} title={row.selectionKey}>
+                      {row.selectionKey}
                     </td>
                     <td>
                       <span
-                        className={row.failed ? styles.requestEventsResultFailed : styles.requestEventsResultSuccess}
+                        className={
+                          row.failed
+                            ? styles.requestEventsResultFailed
+                            : styles.requestEventsResultSuccess
+                        }
                       >
                         {row.failed ? t('stats.failure') : t('stats.success')}
                       </span>

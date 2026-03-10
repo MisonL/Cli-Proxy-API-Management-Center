@@ -2,23 +2,23 @@
  * Validation and type checking functions for quota management.
  */
 
-import type { AuthFileItem } from '@/types';
+import type { CredentialItem } from '@/types';
 import { GEMINI_CLI_IGNORED_MODEL_PREFIXES } from './constants';
 
-export function resolveAuthProvider(file: AuthFileItem): string {
+export function resolveAuthProvider(file: CredentialItem): string {
   const raw = file.provider ?? file.type ?? '';
   return String(raw).trim().toLowerCase();
 }
 
-export function isAntigravityFile(file: AuthFileItem): boolean {
+export function isAntigravityFile(file: CredentialItem): boolean {
   return resolveAuthProvider(file) === 'antigravity';
 }
 
-export function isClaudeFile(file: AuthFileItem): boolean {
+export function isClaudeFile(file: CredentialItem): boolean {
   return resolveAuthProvider(file) === 'claude';
 }
 
-export function isClaudeOAuthFile(file: AuthFileItem): boolean {
+export function isClaudeOCredential(file: CredentialItem): boolean {
   if (!isClaudeFile(file)) return false;
   const metadata =
     file && typeof file.metadata === 'object' && file.metadata !== null
@@ -31,26 +31,26 @@ export function isClaudeOAuthFile(file: AuthFileItem): boolean {
   return accessToken.includes('sk-ant-oat');
 }
 
-export function isCodexFile(file: AuthFileItem): boolean {
+export function isCodexFile(file: CredentialItem): boolean {
   return resolveAuthProvider(file) === 'codex';
 }
 
-export function isGeminiCliFile(file: AuthFileItem): boolean {
+export function isGeminiCliFile(file: CredentialItem): boolean {
   return resolveAuthProvider(file) === 'gemini-cli';
 }
 
-export function isKimiFile(file: AuthFileItem): boolean {
+export function isKimiFile(file: CredentialItem): boolean {
   return resolveAuthProvider(file) === 'kimi';
 }
 
-export function isRuntimeOnlyAuthFile(file: AuthFileItem): boolean {
+export function isRuntimeOnlyCredential(file: CredentialItem): boolean {
   const raw = file['runtime_only'] ?? file.runtimeOnly;
   if (typeof raw === 'boolean') return raw;
   if (typeof raw === 'string') return raw.trim().toLowerCase() === 'true';
   return false;
 }
 
-export function isDisabledAuthFile(file: AuthFileItem): boolean {
+export function isDisabledCredential(file: CredentialItem): boolean {
   const raw = (file as { disabled?: unknown }).disabled;
   if (typeof raw === 'boolean') return raw;
   if (typeof raw === 'number') return raw !== 0;

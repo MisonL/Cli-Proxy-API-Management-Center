@@ -2,14 +2,14 @@
  * Generic quota section component.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { triggerHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useQuotaStore, useThemeStore } from '@/stores';
-import type { AuthFileItem, ResolvedTheme } from '@/types';
+import type { CredentialItem, ResolvedTheme } from '@/types';
 import type { UsageDetail } from '@/utils/usage';
 import { QuotaCard } from './QuotaCard';
 import type { QuotaStatusState } from './QuotaCard';
@@ -28,7 +28,10 @@ type QuotaSetter<T> = (updater: QuotaUpdater<T>) => void;
 type ViewMode = 'paged' | 'all';
 
 const MAX_ITEMS_PER_PAGE = 25;
-const MAX_SHOW_ALL_THRESHOLD = 30;
+const ALL_VIEW_BASE_BATCH = 24;
+const ANALYTICS_AUTO_LOAD_LIMIT = 200;
+const ANALYTICS_BATCH_SIZE = 40;
+const ANALYTICS_CONCURRENCY = 8;
 
 interface QuotaPaginationState<T> {
   pageSize: number;
@@ -95,7 +98,7 @@ const useQuotaPagination = <T,>(items: T[], defaultPageSize = 6): QuotaPaginatio
 
 interface QuotaSectionProps<TState extends QuotaStatusState, TData> {
   config: QuotaConfig<TState, TData>;
-  files: AuthFileItem[];
+  files: CredentialItem[];
   loading: boolean;
   disabled: boolean;
   usageDetails: UsageDetail[];
@@ -121,14 +124,16 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
   const [columns, gridRef] = useGridColumns(380); // Min card width 380px matches SCSS
   const [viewMode, setViewMode] = useState<ViewMode>('paged');
   const [displayMode, setDisplayMode] = useState<'cards' | 'analytics'>('cards');
-  const [showTooManyWarning, setShowTooManyWarning] = useState(false);
+  const [allViewCount, setAllViewCount] = useState(ALL_VIEW_BASE_BATCH);
+  const allViewLoadMoreRef = useRef<HTMLDivElement | null>(null);
+  const analyticsAutoLoadDoneRef = useRef(false);
+  const analyticsFullLoadRequestedRef = useRef(false);
 
   const filteredFiles = useMemo(() => files.filter((file) => config.filterFn(file)), [
     files,
     config
   ]);
-  const showAllAllowed = filteredFiles.length <= MAX_SHOW_ALL_THRESHOLD;
-  const effectiveViewMode: ViewMode = viewMode === 'all' && !showAllAllowed ? 'paged' : viewMode;
+  const effectiveViewMode: ViewMode = viewMode;
 
   const {
     pageSize,
@@ -142,22 +147,6 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
     setLoading
   } = useQuotaPagination(filteredFiles);
 
-  useEffect(() => {
-    if (showAllAllowed) return;
-    if (viewMode !== 'all') return;
-
-    let cancelled = false;
-    queueMicrotask(() => {
-      if (cancelled) return;
-      setViewMode('paged');
-      setShowTooManyWarning(true);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [showAllAllowed, viewMode]);
-
   // Update page size based on view mode and columns
   useEffect(() => {
     if (effectiveViewMode === 'all') {
@@ -168,25 +157,71 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
     }
   }, [effectiveViewMode, columns, filteredFiles.length, setPageSize]);
 
-  const { quota, loadQuota } = useQuotaLoader(config);
+  const { quota, loadQuota, progress, cancel } = useQuotaLoader(config);
+  const allModePageSize = useMemo(() => Math.max(ALL_VIEW_BASE_BATCH, columns * 4), [columns]);
+  const visibleCardItems = useMemo(() => {
+    if (effectiveViewMode !== 'all') return pageItems;
+    const effectiveCount = Math.max(allViewCount, allModePageSize);
+    return filteredFiles.slice(0, Math.min(filteredFiles.length, effectiveCount));
+  }, [allModePageSize, allViewCount, effectiveViewMode, filteredFiles, pageItems]);
+  const remainingAllViewCount = Math.max(filteredFiles.length - visibleCardItems.length, 0);
 
-  const analyticsNeedsQuota = useMemo(
+  const analyticsHasIdle = useMemo(
     () =>
-      displayMode === 'analytics' &&
       filteredFiles.some((file) => {
         const state = quota[file.name];
         return !state || state.status === 'idle';
       }),
-    [displayMode, filteredFiles, quota]
+    [filteredFiles, quota]
+  );
+  const analyticsLoadedCount = useMemo(
+    () =>
+      filteredFiles.reduce((count, file) => {
+        const state = quota[file.name];
+        return state && state.status !== 'idle' && state.status !== 'loading' ? count + 1 : count;
+      }, 0),
+    [filteredFiles, quota]
+  );
+  const analyticsHasVisibleData = analyticsLoadedCount > 0;
+  const analyticsShouldAutoLoadAll = filteredFiles.length <= ANALYTICS_AUTO_LOAD_LIMIT;
+  const resolveAnalyticsTargetLimit = useCallback(
+    () =>
+      analyticsFullLoadRequestedRef.current || analyticsShouldAutoLoadAll
+        ? undefined
+        : ANALYTICS_AUTO_LOAD_LIMIT,
+    [analyticsShouldAutoLoadAll]
+  );
+  const allViewRenderedPercent = useMemo(
+    () =>
+      filteredFiles.length > 0
+        ? Math.min(100, (visibleCardItems.length / filteredFiles.length) * 100)
+        : 0,
+    [filteredFiles.length, visibleCardItems.length]
   );
 
   const pendingQuotaRefreshRef = useRef(false);
   const prevFilesLoadingRef = useRef(loading);
 
   const handleRefresh = useCallback(() => {
+    cancel();
     pendingQuotaRefreshRef.current = true;
     void triggerHeaderRefresh();
-  }, []);
+  }, [cancel]);
+
+  const handleRequestFullLoad = useCallback(() => {
+    if (filteredFiles.length === 0) return;
+    analyticsFullLoadRequestedRef.current = true;
+    cancel();
+    void loadQuota(filteredFiles, 'all', setLoading, {
+      batchSize: ANALYTICS_BATCH_SIZE,
+      concurrency: ANALYTICS_CONCURRENCY,
+    });
+  }, [cancel, filteredFiles, loadQuota, setLoading]);
+
+  useEffect(() => {
+    analyticsAutoLoadDoneRef.current = false;
+    analyticsFullLoadRequestedRef.current = false;
+  }, [files.length, config.type]);
 
   useEffect(() => {
     const wasLoading = prevFilesLoadingRef.current;
@@ -199,15 +234,76 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
     pendingQuotaRefreshRef.current = false;
     const analyticsMode = displayMode === 'analytics';
     const scope = analyticsMode || effectiveViewMode === 'all' ? 'all' : 'page';
-    const targets = analyticsMode || effectiveViewMode === 'all' ? filteredFiles : pageItems;
+    const targets = analyticsMode ? filteredFiles : visibleCardItems;
     if (targets.length === 0) return;
-    loadQuota(targets, scope, setLoading);
-  }, [loading, displayMode, effectiveViewMode, filteredFiles, pageItems, loadQuota, setLoading]);
+    loadQuota(targets, scope, setLoading, {
+      force: true,
+      maxTargets: analyticsMode ? resolveAnalyticsTargetLimit() : undefined,
+      batchSize: analyticsMode ? ANALYTICS_BATCH_SIZE : undefined,
+      concurrency: analyticsMode ? ANALYTICS_CONCURRENCY : undefined,
+    });
+  }, [
+    displayMode,
+    effectiveViewMode,
+    filteredFiles,
+    loadQuota,
+    loading,
+    resolveAnalyticsTargetLimit,
+    setLoading,
+    visibleCardItems,
+  ]);
 
   useEffect(() => {
-    if (!analyticsNeedsQuota || loading || sectionLoading) return;
-    void loadQuota(filteredFiles, 'all', setLoading);
-  }, [analyticsNeedsQuota, filteredFiles, loadQuota, loading, sectionLoading, setLoading]);
+    if (displayMode !== 'analytics' || loading || sectionLoading) return;
+    if (filteredFiles.length === 0) return;
+    if (!analyticsHasIdle) return;
+    if (!analyticsFullLoadRequestedRef.current && !analyticsShouldAutoLoadAll) {
+      if (analyticsAutoLoadDoneRef.current) return;
+      analyticsAutoLoadDoneRef.current = true;
+    }
+    void loadQuota(filteredFiles, 'all', setLoading, {
+      maxTargets: resolveAnalyticsTargetLimit(),
+      batchSize: ANALYTICS_BATCH_SIZE,
+      concurrency: ANALYTICS_CONCURRENCY,
+    });
+  }, [
+    analyticsHasIdle,
+    analyticsShouldAutoLoadAll,
+    displayMode,
+    filteredFiles,
+    loadQuota,
+    loading,
+    resolveAnalyticsTargetLimit,
+    sectionLoading,
+    setLoading,
+  ]);
+
+  useEffect(() => {
+    if (displayMode !== 'cards' || loading || sectionLoading) return;
+    if (visibleCardItems.length === 0) return;
+    void loadQuota(visibleCardItems, effectiveViewMode === 'all' ? 'all' : 'page', setLoading);
+  }, [displayMode, effectiveViewMode, loadQuota, loading, sectionLoading, setLoading, visibleCardItems]);
+
+  useEffect(() => {
+    if (effectiveViewMode !== 'all') return;
+    const node = allViewLoadMoreRef.current;
+    if (!node || remainingAllViewCount <= 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        startTransition(() => {
+          setAllViewCount((prev) => Math.min(filteredFiles.length, prev + allModePageSize));
+        });
+      },
+      {
+        rootMargin: '240px 0px',
+      }
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [allModePageSize, effectiveViewMode, filteredFiles.length, remainingAllViewCount]);
 
   useEffect(() => {
     if (loading) return;
@@ -249,14 +345,20 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
             <Button
               variant={displayMode === 'cards' ? 'primary' : 'secondary'}
               size="sm"
-              onClick={() => setDisplayMode('cards')}
+              onClick={() => {
+                cancel();
+                startTransition(() => setDisplayMode('cards'));
+              }}
             >
               {t('quota_management.analytics.cards_view')}
             </Button>
             <Button
               variant={displayMode === 'analytics' ? 'primary' : 'secondary'}
               size="sm"
-              onClick={() => setDisplayMode('analytics')}
+              onClick={() => {
+                cancel();
+                startTransition(() => setDisplayMode('analytics'));
+              }}
             >
               {t('quota_management.analytics.stats_view')}
             </Button>
@@ -268,20 +370,17 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
                 size="sm"
                 onClick={() => setViewMode('paged')}
               >
-                {t('auth_files.view_mode_paged')}
+                {t('credentials.view_mode_paged')}
               </Button>
               <Button
                 variant={effectiveViewMode === 'all' ? 'primary' : 'secondary'}
                 size="sm"
                 onClick={() => {
-                  if (filteredFiles.length > MAX_SHOW_ALL_THRESHOLD) {
-                    setShowTooManyWarning(true);
-                  } else {
-                    setViewMode('all');
-                  }
+                  setAllViewCount(Math.max(ALL_VIEW_BASE_BATCH, columns * 4));
+                  setViewMode('all');
                 }}
               >
-                {t('auth_files.view_mode_all')}
+                {t('credentials.view_mode_all')}
               </Button>
             </div>
           )}
@@ -311,13 +410,18 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
           files={filteredFiles}
           usageDetails={usageDetails}
           quotaMap={quota as unknown as Record<string, unknown>}
-          loading={isRefreshing || usageLoading}
+          loading={usageLoading || ((isRefreshing || progress.active) && !analyticsHasVisibleData)}
+          hydrating={Boolean(progress.active && progress.scope === 'all')}
+          hydrationCompleted={progress.completed}
+          hydrationTotal={progress.total}
           warningThresholds={warningThresholds}
+          onRequestFullLoad={handleRequestFullLoad}
+          fullLoadBusy={Boolean(progress.active || isRefreshing || loading || disabled)}
         />
       ) : (
         <>
           <div ref={gridRef} className={config.gridClassName}>
-            {pageItems.map((item) => (
+            {visibleCardItems.map((item) => (
               <QuotaCard
                 key={item.name}
                 item={item}
@@ -331,6 +435,12 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
               />
             ))}
           </div>
+          {effectiveViewMode === 'all' && remainingAllViewCount > 0 && (
+            <div ref={allViewLoadMoreRef} className={styles.analyticsHint}>
+              {t('common.loading')} {visibleCardItems.length}/{filteredFiles.length} ·{' '}
+              {allViewRenderedPercent.toFixed(1)}%
+            </div>
+          )}
           {filteredFiles.length > pageSize && effectiveViewMode === 'paged' && (
             <div className={styles.pagination}>
               <Button
@@ -339,10 +449,10 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
                 onClick={goToPrev}
                 disabled={currentPage <= 1}
               >
-                {t('auth_files.pagination_prev')}
+                {t('credentials.pagination_prev')}
               </Button>
               <div className={styles.pageInfo}>
-                {t('auth_files.pagination_info', {
+                {t('credentials.pagination_info', {
                   current: currentPage,
                   total: totalPages,
                   count: filteredFiles.length
@@ -354,21 +464,11 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
                 onClick={goToNext}
                 disabled={currentPage >= totalPages}
               >
-                {t('auth_files.pagination_next')}
+                {t('credentials.pagination_next')}
               </Button>
             </div>
           )}
         </>
-      )}
-      {showTooManyWarning && (
-        <div className={styles.warningOverlay} onClick={() => setShowTooManyWarning(false)}>
-          <div className={styles.warningModal} onClick={(e) => e.stopPropagation()}>
-            <p>{t('auth_files.too_many_files_warning')}</p>
-            <Button variant="primary" size="sm" onClick={() => setShowTooManyWarning(false)}>
-              {t('common.confirm')}
-            </Button>
-          </div>
-        </div>
       )}
     </Card>
   );

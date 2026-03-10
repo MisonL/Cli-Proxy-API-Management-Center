@@ -6,11 +6,13 @@ import { apiClient } from './client';
 
 export interface VertexImportResponse {
   status: 'ok';
+  credential_id?: string;
+  credential_ref?: string;
+  credential_name?: string;
+  runtime_id?: string;
   project_id?: string;
   email?: string;
   location?: string;
-  'auth-file'?: string;
-  auth_file?: string;
 }
 
 export const vertexApi = {
@@ -21,5 +23,5 @@ export const vertexApi = {
       formData.append('location', location);
     }
     return apiClient.postForm<VertexImportResponse>('/vertex/import', formData);
-  }
+  },
 };

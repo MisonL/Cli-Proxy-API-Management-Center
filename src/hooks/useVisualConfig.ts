@@ -488,6 +488,13 @@ export function useVisualConfig() {
       const streaming = asRecord(parsed.streaming);
       const apiKeysStorage = resolveApiKeysStorage(parsed);
 
+      if (typeof parsed['auth-dir'] === 'string' && parsed['auth-dir'].trim()) {
+        throw new Error('legacy config key auth-dir is no longer supported; migrate legacy JSON credentials first and remove auth-dir');
+      }
+      if (typeof parsed['credentials-dir'] === 'string' && parsed['credentials-dir'].trim()) {
+        throw new Error('config key credentials-dir is no longer supported; migrate legacy JSON credentials first and remove credentials-dir');
+      }
+
       const newValues: VisualConfigValues = {
         host: typeof parsed.host === 'string' ? parsed.host : '',
         port: String(parsed.port ?? ''),
@@ -507,7 +514,6 @@ export function useVisualConfig() {
               ? remoteManagement['panel-repo']
               : '',
 
-        authDir: typeof parsed['auth-dir'] === 'string' ? parsed['auth-dir'] : '',
         apiKeysText: apiKeysStorage.text,
 
         debug: Boolean(parsed.debug),
@@ -609,7 +615,12 @@ export function useVisualConfig() {
           deleteIfMapEmpty(doc, ['remote-management']);
         }
 
-        setStringInDoc(doc, ['auth-dir'], values.authDir);
+        if (docHas(doc, ['auth-dir'])) {
+          doc.deleteIn(['auth-dir']);
+        }
+        if (docHas(doc, ['credentials-dir'])) {
+          doc.deleteIn(['credentials-dir']);
+        }
         if (values.apiKeysText !== baselineValues.apiKeysText) {
           const apiKeys = values.apiKeysText
             .split('\n')

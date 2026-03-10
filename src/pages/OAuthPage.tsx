@@ -42,10 +42,13 @@ interface IFlowCookieState {
 }
 
 interface VertexImportResult {
+  credentialRef?: string;
+  credentialId?: string;
+  runtimeId?: string;
+  credentialName?: string;
   projectId?: string;
   email?: string;
   location?: string;
-  authFile?: string;
 }
 
 interface VertexImportState {
@@ -72,13 +75,55 @@ function getErrorStatus(error: unknown): number | undefined {
   return typeof error.status === 'number' ? error.status : undefined;
 }
 
-const PROVIDERS: { id: OAuthProvider; titleKey: string; hintKey: string; urlLabelKey: string; icon: string | { light: string; dark: string } }[] = [
-  { id: 'codex', titleKey: 'auth_login.codex_oauth_title', hintKey: 'auth_login.codex_oauth_hint', urlLabelKey: 'auth_login.codex_oauth_url_label', icon: { light: iconCodexLight, dark: iconCodexDark } },
-  { id: 'anthropic', titleKey: 'auth_login.anthropic_oauth_title', hintKey: 'auth_login.anthropic_oauth_hint', urlLabelKey: 'auth_login.anthropic_oauth_url_label', icon: iconClaude },
-  { id: 'antigravity', titleKey: 'auth_login.antigravity_oauth_title', hintKey: 'auth_login.antigravity_oauth_hint', urlLabelKey: 'auth_login.antigravity_oauth_url_label', icon: iconAntigravity },
-  { id: 'gemini-cli', titleKey: 'auth_login.gemini_cli_oauth_title', hintKey: 'auth_login.gemini_cli_oauth_hint', urlLabelKey: 'auth_login.gemini_cli_oauth_url_label', icon: iconGemini },
-  { id: 'kimi', titleKey: 'auth_login.kimi_oauth_title', hintKey: 'auth_login.kimi_oauth_hint', urlLabelKey: 'auth_login.kimi_oauth_url_label', icon: { light: iconKimiLight, dark: iconKimiDark } },
-  { id: 'qwen', titleKey: 'auth_login.qwen_oauth_title', hintKey: 'auth_login.qwen_oauth_hint', urlLabelKey: 'auth_login.qwen_oauth_url_label', icon: iconQwen }
+const PROVIDERS: {
+  id: OAuthProvider;
+  titleKey: string;
+  hintKey: string;
+  urlLabelKey: string;
+  icon: string | { light: string; dark: string };
+}[] = [
+  {
+    id: 'codex',
+    titleKey: 'auth_login.codex_oauth_title',
+    hintKey: 'auth_login.codex_oauth_hint',
+    urlLabelKey: 'auth_login.codex_oauth_url_label',
+    icon: { light: iconCodexLight, dark: iconCodexDark },
+  },
+  {
+    id: 'anthropic',
+    titleKey: 'auth_login.anthropic_oauth_title',
+    hintKey: 'auth_login.anthropic_oauth_hint',
+    urlLabelKey: 'auth_login.anthropic_oauth_url_label',
+    icon: iconClaude,
+  },
+  {
+    id: 'antigravity',
+    titleKey: 'auth_login.antigravity_oauth_title',
+    hintKey: 'auth_login.antigravity_oauth_hint',
+    urlLabelKey: 'auth_login.antigravity_oauth_url_label',
+    icon: iconAntigravity,
+  },
+  {
+    id: 'gemini-cli',
+    titleKey: 'auth_login.gemini_cli_oauth_title',
+    hintKey: 'auth_login.gemini_cli_oauth_hint',
+    urlLabelKey: 'auth_login.gemini_cli_oauth_url_label',
+    icon: iconGemini,
+  },
+  {
+    id: 'kimi',
+    titleKey: 'auth_login.kimi_oauth_title',
+    hintKey: 'auth_login.kimi_oauth_hint',
+    urlLabelKey: 'auth_login.kimi_oauth_url_label',
+    icon: { light: iconKimiLight, dark: iconKimiDark },
+  },
+  {
+    id: 'qwen',
+    titleKey: 'auth_login.qwen_oauth_title',
+    hintKey: 'auth_login.qwen_oauth_hint',
+    urlLabelKey: 'auth_login.qwen_oauth_url_label',
+    icon: iconQwen,
+  },
 ];
 
 const CALLBACK_SUPPORTED: OAuthProvider[] = ['codex', 'anthropic', 'antigravity', 'gemini-cli'];
@@ -94,12 +139,14 @@ export function OAuthPage() {
   const { t } = useTranslation();
   const { showNotification } = useNotificationStore();
   const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
-  const [states, setStates] = useState<Record<OAuthProvider, ProviderState>>({} as Record<OAuthProvider, ProviderState>);
+  const [states, setStates] = useState<Record<OAuthProvider, ProviderState>>(
+    {} as Record<OAuthProvider, ProviderState>
+  );
   const [iflowCookie, setIflowCookie] = useState<IFlowCookieState>({ cookie: '', loading: false });
   const [vertexState, setVertexState] = useState<VertexImportState>({
     fileName: '',
     location: '',
-    loading: false
+    loading: false,
   });
   const timers = useRef<Record<string, number>>({});
   const vertexFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -118,7 +165,7 @@ export function OAuthPage() {
   const updateProviderState = (provider: OAuthProvider, next: Partial<ProviderState>) => {
     setStates((prev) => ({
       ...prev,
-      [provider]: { ...(prev[provider] ?? {}), ...next }
+      [provider]: { ...(prev[provider] ?? {}), ...next },
     }));
   };
 
@@ -144,7 +191,11 @@ export function OAuthPage() {
           delete timers.current[provider];
         }
       } catch (err: unknown) {
-        updateProviderState(provider, { status: 'error', error: getErrorMessage(err), polling: false });
+        updateProviderState(provider, {
+          status: 'error',
+          error: getErrorMessage(err),
+          polling: false,
+        });
         window.clearInterval(timer);
         delete timers.current[provider];
       }
@@ -170,14 +221,19 @@ export function OAuthPage() {
       error: undefined,
       callbackStatus: undefined,
       callbackError: undefined,
-      callbackUrl: ''
+      callbackUrl: '',
     });
     try {
       const res = await oauthApi.startAuth(
         provider,
         provider === 'gemini-cli' ? { projectId: projectId || undefined } : undefined
       );
-      updateProviderState(provider, { url: res.url, state: res.state, status: 'waiting', polling: true });
+      updateProviderState(provider, {
+        url: res.url,
+        state: res.state,
+        status: 'waiting',
+        polling: true,
+      });
       if (res.state) {
         startPolling(provider, res.state);
       }
@@ -209,7 +265,7 @@ export function OAuthPage() {
     updateProviderState(provider, {
       callbackSubmitting: true,
       callbackStatus: undefined,
-      callbackError: undefined
+      callbackError: undefined,
     });
     try {
       await oauthApi.submitCallback(provider, redirectUrl);
@@ -221,13 +277,13 @@ export function OAuthPage() {
       const errorMessage =
         status === 404
           ? t('auth_login.oauth_callback_upgrade_hint', {
-              defaultValue: 'Please update CLI Proxy API or check the connection.'
+              defaultValue: 'Please update CLI Proxy API or check the connection.',
             })
           : message || undefined;
       updateProviderState(provider, {
         callbackSubmitting: false,
         callbackStatus: 'error',
-        callbackError: errorMessage
+        callbackError: errorMessage,
       });
       const notificationMessage = errorMessage
         ? `${t('auth_login.oauth_callback_error')} ${errorMessage}`
@@ -247,7 +303,7 @@ export function OAuthPage() {
       loading: true,
       error: undefined,
       errorType: undefined,
-      result: undefined
+      result: undefined,
     }));
     try {
       const res = await oauthApi.iflowCookieAuth(cookie);
@@ -259,14 +315,22 @@ export function OAuthPage() {
           ...prev,
           loading: false,
           error: res.error,
-          errorType: 'error'
+          errorType: 'error',
         }));
-        showNotification(`${t('auth_login.iflow_cookie_status_error')} ${res.error || ''}`, 'error');
+        showNotification(
+          `${t('auth_login.iflow_cookie_status_error')} ${res.error || ''}`,
+          'error'
+        );
       }
     } catch (err: unknown) {
       if (getErrorStatus(err) === 409) {
         const message = t('auth_login.iflow_cookie_config_duplicate');
-        setIflowCookie((prev) => ({ ...prev, loading: false, error: message, errorType: 'warning' }));
+        setIflowCookie((prev) => ({
+          ...prev,
+          loading: false,
+          error: message,
+          errorType: 'warning',
+        }));
         showNotification(message, 'warning');
         return;
       }
@@ -296,7 +360,7 @@ export function OAuthPage() {
       file,
       fileName: file.name,
       error: undefined,
-      result: undefined
+      result: undefined,
     }));
     event.target.value = '';
   };
@@ -316,10 +380,13 @@ export function OAuthPage() {
         location || undefined
       );
       const result: VertexImportResult = {
+        credentialRef: res.credential_ref,
+        credentialId: res.credential_id,
+        runtimeId: res.runtime_id,
+        credentialName: res.credential_name,
         projectId: res.project_id,
         email: res.email,
         location: res.location,
-        authFile: res['auth-file'] ?? res.auth_file
       };
       setVertexState((prev) => ({ ...prev, loading: false, result }));
       showNotification(t('vertex_import.success'), 'success');
@@ -328,7 +395,7 @@ export function OAuthPage() {
       setVertexState((prev) => ({
         ...prev,
         loading: false,
-        error: message || t('notification.upload_failed')
+        error: message || t('notification.upload_failed'),
       }));
       const notification = message
         ? `${t('notification.upload_failed')}: ${message}`
@@ -377,7 +444,7 @@ export function OAuthPage() {
                         onChange={(e) =>
                           updateProviderState(provider.id, {
                             projectId: e.target.value,
-                            projectIdError: undefined
+                            projectIdError: undefined,
                           })
                         }
                         placeholder={t('auth_login.gemini_cli_project_id_placeholder')}
@@ -412,7 +479,7 @@ export function OAuthPage() {
                           updateProviderState(provider.id, {
                             callbackUrl: e.target.value,
                             callbackStatus: undefined,
-                            callbackError: undefined
+                            callbackError: undefined,
                           })
                         }
                         placeholder={t('auth_login.oauth_callback_placeholder')}
@@ -477,7 +544,7 @@ export function OAuthPage() {
               onChange={(e) =>
                 setVertexState((prev) => ({
                   ...prev,
-                  location: e.target.value
+                  location: e.target.value,
                 }))
               }
               placeholder={t('vertex_import.location_placeholder')}
@@ -505,18 +572,16 @@ export function OAuthPage() {
                 onChange={handleVertexFileChange}
               />
             </div>
-            {vertexState.error && (
-              <div className="status-badge error">
-                {vertexState.error}
-              </div>
-            )}
+            {vertexState.error && <div className="status-badge error">{vertexState.error}</div>}
             {vertexState.result && (
               <div className={styles.connectionBox}>
                 <div className={styles.connectionLabel}>{t('vertex_import.result_title')}</div>
                 <div className={styles.keyValueList}>
                   {vertexState.result.projectId && (
                     <div className={styles.keyValueItem}>
-                      <span className={styles.keyValueKey}>{t('vertex_import.result_project')}</span>
+                      <span className={styles.keyValueKey}>
+                        {t('vertex_import.result_project')}
+                      </span>
                       <span className={styles.keyValueValue}>{vertexState.result.projectId}</span>
                     </div>
                   )}
@@ -528,14 +593,49 @@ export function OAuthPage() {
                   )}
                   {vertexState.result.location && (
                     <div className={styles.keyValueItem}>
-                      <span className={styles.keyValueKey}>{t('vertex_import.result_location')}</span>
+                      <span className={styles.keyValueKey}>
+                        {t('vertex_import.result_location')}
+                      </span>
                       <span className={styles.keyValueValue}>{vertexState.result.location}</span>
                     </div>
                   )}
-                  {vertexState.result.authFile && (
+                  {vertexState.result.credentialId && (
                     <div className={styles.keyValueItem}>
-                      <span className={styles.keyValueKey}>{t('vertex_import.result_file')}</span>
-                      <span className={styles.keyValueValue}>{vertexState.result.authFile}</span>
+                      <span className={styles.keyValueKey}>
+                        {t('vertex_import.result_credential_id')}
+                      </span>
+                      <span className={styles.keyValueValue}>
+                        {vertexState.result.credentialId}
+                      </span>
+                    </div>
+                  )}
+                  {vertexState.result.credentialRef &&
+                    vertexState.result.credentialRef !== vertexState.result.credentialId && (
+                      <div className={styles.keyValueItem}>
+                        <span className={styles.keyValueKey}>
+                          {t('vertex_import.result_credential_ref')}
+                        </span>
+                        <span className={styles.keyValueValue}>
+                          {vertexState.result.credentialRef}
+                        </span>
+                      </div>
+                    )}
+                  {vertexState.result.credentialName && (
+                    <div className={styles.keyValueItem}>
+                      <span className={styles.keyValueKey}>
+                        {t('vertex_import.result_credential_name')}
+                      </span>
+                      <span className={styles.keyValueValue}>
+                        {vertexState.result.credentialName}
+                      </span>
+                    </div>
+                  )}
+                  {vertexState.result.runtimeId && (
+                    <div className={styles.keyValueItem}>
+                      <span className={styles.keyValueKey}>
+                        {t('vertex_import.result_runtime_id')}
+                      </span>
+                      <span className={styles.keyValueValue}>{vertexState.result.runtimeId}</span>
                     </div>
                   )}
                 </div>
@@ -560,9 +660,7 @@ export function OAuthPage() {
         >
           <div className={styles.cardContent}>
             <div className={styles.cardHint}>{t('auth_login.iflow_cookie_hint')}</div>
-            <div className={styles.cardHintSecondary}>
-              {t('auth_login.iflow_cookie_key_hint')}
-            </div>
+            <div className={styles.cardHintSecondary}>{t('auth_login.iflow_cookie_key_hint')}</div>
             <div className={styles.formItem}>
               <label className={styles.formItemLabel}>{t('auth_login.iflow_cookie_label')}</label>
               <Input
@@ -583,29 +681,70 @@ export function OAuthPage() {
             )}
             {iflowCookie.result && iflowCookie.result.status === 'ok' && (
               <div className={styles.connectionBox}>
-                <div className={styles.connectionLabel}>{t('auth_login.iflow_cookie_result_title')}</div>
+                <div className={styles.connectionLabel}>
+                  {t('auth_login.iflow_cookie_result_title')}
+                </div>
                 <div className={styles.keyValueList}>
                   {iflowCookie.result.email && (
                     <div className={styles.keyValueItem}>
-                      <span className={styles.keyValueKey}>{t('auth_login.iflow_cookie_result_email')}</span>
+                      <span className={styles.keyValueKey}>
+                        {t('auth_login.iflow_cookie_result_email')}
+                      </span>
                       <span className={styles.keyValueValue}>{iflowCookie.result.email}</span>
                     </div>
                   )}
                   {iflowCookie.result.expired && (
                     <div className={styles.keyValueItem}>
-                      <span className={styles.keyValueKey}>{t('auth_login.iflow_cookie_result_expired')}</span>
+                      <span className={styles.keyValueKey}>
+                        {t('auth_login.iflow_cookie_result_expired')}
+                      </span>
                       <span className={styles.keyValueValue}>{iflowCookie.result.expired}</span>
                     </div>
                   )}
-                  {iflowCookie.result.saved_path && (
+                  {iflowCookie.result.credential_id && (
                     <div className={styles.keyValueItem}>
-                      <span className={styles.keyValueKey}>{t('auth_login.iflow_cookie_result_path')}</span>
-                      <span className={styles.keyValueValue}>{iflowCookie.result.saved_path}</span>
+                      <span className={styles.keyValueKey}>
+                        {t('auth_login.iflow_cookie_result_credential_id')}
+                      </span>
+                      <span className={styles.keyValueValue}>
+                        {iflowCookie.result.credential_id}
+                      </span>
                     </div>
                   )}
+                  {iflowCookie.result.credential_name && (
+                    <div className={styles.keyValueItem}>
+                      <span className={styles.keyValueKey}>
+                        {t('auth_login.iflow_cookie_result_credential_name')}
+                      </span>
+                      <span className={styles.keyValueValue}>
+                        {iflowCookie.result.credential_name}
+                      </span>
+                    </div>
+                  )}
+                  {iflowCookie.result.runtime_id && (
+                    <div className={styles.keyValueItem}>
+                      <span className={styles.keyValueKey}>
+                        {t('auth_login.iflow_cookie_result_runtime_id')}
+                      </span>
+                      <span className={styles.keyValueValue}>{iflowCookie.result.runtime_id}</span>
+                    </div>
+                  )}
+                  {iflowCookie.result.credential_ref &&
+                    iflowCookie.result.credential_ref !== iflowCookie.result.credential_id && (
+                      <div className={styles.keyValueItem}>
+                        <span className={styles.keyValueKey}>
+                          {t('auth_login.iflow_cookie_result_credential_ref')}
+                        </span>
+                        <span className={styles.keyValueValue}>
+                          {iflowCookie.result.credential_ref}
+                        </span>
+                      </div>
+                    )}
                   {iflowCookie.result.type && (
                     <div className={styles.keyValueItem}>
-                      <span className={styles.keyValueKey}>{t('auth_login.iflow_cookie_result_type')}</span>
+                      <span className={styles.keyValueKey}>
+                        {t('auth_login.iflow_cookie_result_type')}
+                      </span>
                       <span className={styles.keyValueValue}>{iflowCookie.result.type}</span>
                     </div>
                   )}

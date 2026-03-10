@@ -5,10 +5,12 @@ import { QuotaPage } from './QuotaPage';
 
 const mocks = vi.hoisted(() => ({
   showNotification: vi.fn(),
-  authFilesList: vi.fn(),
+  credentialsList: vi.fn(),
   fetchConfigYaml: vi.fn(),
   loadUsageStats: vi.fn(),
   downloadBlob: vi.fn(),
+  getPlatformStatus: vi.fn(),
+  getProviderOverview: vi.fn(),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -64,11 +66,15 @@ vi.mock('@/stores', () => ({
 }));
 
 vi.mock('@/services/api', () => ({
-  authFilesApi: {
-    list: mocks.authFilesList,
+  credentialsApi: {
+    list: mocks.credentialsList,
   },
   configFileApi: {
     fetchConfigYaml: mocks.fetchConfigYaml,
+  },
+  platformApi: {
+    getStatus: mocks.getPlatformStatus,
+    getProviderOverview: mocks.getProviderOverview,
   },
 }));
 
@@ -118,9 +124,16 @@ describe('QuotaPage', () => {
   beforeEach(() => {
     localStorage.clear();
     mocks.showNotification.mockReset();
-    mocks.authFilesList.mockResolvedValue({ files: [] });
+    mocks.credentialsList.mockReset();
+    mocks.fetchConfigYaml.mockReset();
+    mocks.loadUsageStats.mockReset();
+    mocks.downloadBlob.mockReset();
+    mocks.getPlatformStatus.mockReset();
+    mocks.getProviderOverview.mockReset();
+    mocks.credentialsList.mockResolvedValue({ files: [] });
     mocks.fetchConfigYaml.mockResolvedValue('debug: false\n');
     mocks.loadUsageStats.mockResolvedValue(undefined);
+    mocks.getPlatformStatus.mockRejectedValue(new Error('platform disabled'));
   });
 
   it('导入无效阈值文件时提示失败且保留当前设置', async () => {
@@ -164,5 +177,38 @@ describe('QuotaPage', () => {
     const inputs = screen.getAllByRole('spinbutton') as HTMLInputElement[];
     expect(inputs[0].value).toBe('12');
     expect(inputs[1].value).toBe('7');
+  });
+
+  it('平台模式下优先渲染 overview 卡片并跳过 usage 拉取', async () => {
+    mocks.getPlatformStatus.mockResolvedValue({
+      enabled: true,
+      role: 'server',
+    });
+    mocks.getProviderOverview.mockImplementation(async (provider: string) => ({
+      provider,
+      mode: 'quota',
+      total_credentials: provider === 'codex' ? 2 : 0,
+      active_credentials: provider === 'codex' ? 2 : 0,
+      disabled_credentials: 0,
+      unavailable_credentials: 0,
+      loaded_credentials: provider === 'codex' ? 2 : 0,
+      failed_quota_credentials: 0,
+      histogram_labels: [],
+      histogram_datasets: [],
+      window_stats: [],
+      active_pool_percent_7d: 0,
+      note: 'ready',
+      warnings: [],
+      generated_at: new Date().toISOString(),
+    }));
+
+    render(<QuotaPage />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText('QuotaAnalyticsSection').length).toBeGreaterThan(0);
+    });
+
+    expect(mocks.loadUsageStats).not.toHaveBeenCalled();
+    expect(mocks.credentialsList).not.toHaveBeenCalled();
   });
 });

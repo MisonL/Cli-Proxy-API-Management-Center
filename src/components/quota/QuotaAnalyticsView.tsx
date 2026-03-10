@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import {
   BarElement,
   CategoryScale,
@@ -13,11 +13,15 @@ import { Bar } from 'react-chartjs-2';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { useThemeStore } from '@/stores';
-import type { AuthFileItem } from '@/types/authFile';
+import type { CredentialItem } from '@/types/credential';
 import type { UsageDetail } from '@/utils/usage';
 import { formatCompactNumber } from '@/utils/usage';
 import type { AntigravityQuotaState, ClaudeQuotaState, CodexQuotaState, GeminiCliQuotaState, KimiQuotaState } from '@/types/quota';
-import { buildProviderAnalytics, type QuotaWarningThresholds } from './quotaAnalytics';
+import {
+  buildProviderAnalytics,
+  type ProviderAnalytics,
+  type QuotaWarningThresholds,
+} from './quotaAnalytics';
 import { QuotaBucketFilesModal } from './QuotaBucketFilesModal';
 import {
   buildSelectedQuotaBucketState,
@@ -40,15 +44,26 @@ type QuotaMap =
 interface QuotaAnalyticsViewProps {
   providerKey: string;
   providerLabel: string;
-  files: AuthFileItem[];
+  files: CredentialItem[];
   usageDetails: UsageDetail[];
   quotaMap?: Record<string, unknown>;
   loading?: boolean;
+  hydrating?: boolean;
+  hydrationCompleted?: number;
+  hydrationTotal?: number;
   warningThresholds?: QuotaWarningThresholds;
+  precomputedAnalytics?: ProviderAnalytics;
+  onRequestFullLoad?: () => void;
+  fullLoadBusy?: boolean;
 }
 
 const formatPercent = (value: number | null | undefined) =>
   value === null || value === undefined || !Number.isFinite(value) ? '--' : `${value.toFixed(1)}%`;
+
+const getHydrationPercent = (completed: number, total: number) => {
+  if (!Number.isFinite(total) || total <= 0) return 0;
+  return Math.min(100, Math.max(0, (completed / total) * 100));
+};
 
 const formatDays = (value: number | null | undefined, t: ReturnType<typeof useTranslation>['t']) => {
   if (value === null || value === undefined || !Number.isFinite(value)) {
@@ -74,22 +89,40 @@ export function QuotaAnalyticsView({
   usageDetails,
   quotaMap,
   loading = false,
+  hydrating = false,
+  hydrationCompleted = 0,
+  hydrationTotal = 0,
   warningThresholds,
+  precomputedAnalytics,
+  onRequestFullLoad,
+  fullLoadBusy = false,
 }: QuotaAnalyticsViewProps) {
   const { t } = useTranslation();
   const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
+  const deferredFiles = useDeferredValue(files);
+  const deferredUsageDetails = useDeferredValue(usageDetails);
+  const deferredQuotaMap = useDeferredValue(quotaMap);
 
   const analytics = useMemo(
     () =>
+      precomputedAnalytics ??
       buildProviderAnalytics(
         t,
         providerKey,
-        files,
-        usageDetails,
-        quotaMap as QuotaMap | undefined,
+        deferredFiles,
+        deferredUsageDetails,
+        deferredQuotaMap as QuotaMap | undefined,
         warningThresholds
       ),
-    [files, providerKey, quotaMap, t, usageDetails, warningThresholds]
+    [
+      deferredFiles,
+      deferredQuotaMap,
+      deferredUsageDetails,
+      precomputedAnalytics,
+      providerKey,
+      t,
+      warningThresholds,
+    ]
   );
 
   const [hiddenDatasetIds, setHiddenDatasetIds] = useState<string[]>([]);
@@ -122,6 +155,17 @@ export function QuotaAnalyticsView({
   );
 
   const hiddenDatasetCount = effectiveHiddenDatasetIds.length;
+  const hydrationPercent = getHydrationPercent(hydrationCompleted, hydrationTotal);
+  const coveragePercent =
+    analytics.mode === 'quota' && analytics.totalFiles > 0
+      ? (analytics.loadedFiles / analytics.totalFiles) * 100
+      : null;
+  const showCoverage = analytics.mode === 'quota' && analytics.totalFiles > 0;
+  const showFullLoadAction =
+    Boolean(onRequestFullLoad) &&
+    analytics.mode === 'quota' &&
+    analytics.totalFiles > 0 &&
+    analytics.loadedFiles < analytics.totalFiles;
 
   const toggleDatasetVisibility = (datasetId: string) => {
     setHiddenDatasetIds((prev) => {
@@ -219,7 +263,30 @@ export function QuotaAnalyticsView({
             <div className={styles.analyticsEyebrow}>{providerLabel}</div>
             <h4 className={styles.analyticsTitle}>{t('quota_management.analytics.histogram_title')}</h4>
           </div>
-          <div className={styles.analyticsNote}>{analytics.note}</div>
+          <div className={styles.analyticsNoteGroup}>
+            <div className={styles.analyticsNote}>
+              <div className={styles.analyticsNoteText}>{analytics.note}</div>
+              {showCoverage ? (
+                <div className={styles.analyticsNoteMeta}>
+                  <span>{t('quota_management.analytics.coverage_label')}</span>
+                  <span>
+                    {coveragePercent === null ? '--' : formatPercent(coveragePercent)} ·{' '}
+                    {analytics.loadedFiles}/{analytics.totalFiles}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+            {showFullLoadAction ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onRequestFullLoad}
+                disabled={fullLoadBusy}
+              >
+                {t('quota_management.analytics.load_full_quota')}
+              </Button>
+            ) : null}
+          </div>
         </div>
 
         {loading ? (
@@ -228,7 +295,24 @@ export function QuotaAnalyticsView({
           <div className={styles.analyticsHint}>{t('quota_management.analytics.usage_only_histogram_hint')}</div>
         ) : hasHistogram ? (
           <>
-          <div className={styles.analyticsLegend} aria-label={t('quota_management.analytics.legend_label')}>
+            {hydrating ? (
+              <div className={styles.analyticsProgress} aria-live="polite">
+                <div className={styles.analyticsProgressHeader}>
+                  <span className={styles.analyticsProgressLabel}>{t('common.loading')}</span>
+                  <span className={styles.analyticsProgressValue}>
+                    {Math.min(hydrationCompleted, hydrationTotal)}/{hydrationTotal} ·{' '}
+                    {formatPercent(hydrationPercent)}
+                  </span>
+                </div>
+                <div className={styles.analyticsProgressBar} aria-hidden="true">
+                  <div
+                    className={styles.analyticsProgressBarFill}
+                    style={{ width: `${hydrationPercent}%` }}
+                  />
+                </div>
+              </div>
+            ) : null}
+            <div className={styles.analyticsLegend} aria-label={t('quota_management.analytics.legend_label')}>
               <div className={styles.analyticsLegendSummary}>
                 <span className={styles.analyticsLegendSummaryText}>
                   {t('quota_management.analytics.legend_visibility', {
@@ -243,18 +327,18 @@ export function QuotaAnalyticsView({
                 ) : null}
               </div>
               {analytics.histogramDatasets.map((dataset) => (
-	                <button
-	                  key={dataset.id}
-	                  type="button"
-	                  className={`${styles.analyticsLegendItem} ${
-	                    effectiveHiddenDatasetIds.includes(dataset.id)
-	                      ? styles.analyticsLegendItemMuted
-	                      : ''
-	                  }`}
-	                  onClick={() => toggleDatasetVisibility(dataset.id)}
-	                  aria-pressed={!effectiveHiddenDatasetIds.includes(dataset.id)}
-	                  title={t('quota_management.analytics.legend_toggle')}
-	                >
+                <button
+                  key={dataset.id}
+                  type="button"
+                  className={`${styles.analyticsLegendItem} ${
+                    effectiveHiddenDatasetIds.includes(dataset.id)
+                      ? styles.analyticsLegendItemMuted
+                      : ''
+                  }`}
+                  onClick={() => toggleDatasetVisibility(dataset.id)}
+                  aria-pressed={!effectiveHiddenDatasetIds.includes(dataset.id)}
+                  title={t('quota_management.analytics.legend_toggle')}
+                >
                   <span
                     className={styles.analyticsLegendDot}
                     style={{ backgroundColor: dataset.color }}
@@ -415,6 +499,7 @@ export function QuotaAnalyticsView({
         bucketIndex={selectedBucket?.bucketIndex ?? 0}
         bucketLabel={selectedBucket?.bucketLabel ?? ''}
         items={selectedBucket?.items ?? []}
+        platformBacked={Boolean(precomputedAnalytics)}
       />
     </div>
   );

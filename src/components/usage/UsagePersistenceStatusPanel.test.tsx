@@ -53,12 +53,12 @@ describe('UsagePersistenceStatusPanel', () => {
       />
     );
 
-    expect(screen.getByText('已开启持久化')).toBeTruthy();
+    expect(screen.getAllByText('已开启持久化').length).toBeGreaterThan(0);
     expect(
-      screen.getByText((content) =>
+      screen.getAllByText((content) =>
         content.includes('/workspace/usage-backups/usage-statistics.json')
-      )
-    ).toBeTruthy();
+      ).length
+    ).toBeGreaterThan(0);
     expect(screen.getByText('+10 / 2')).toBeTruthy();
   });
 

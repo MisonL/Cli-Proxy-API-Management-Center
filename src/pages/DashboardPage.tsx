@@ -8,7 +8,7 @@ import {
   IconSatellite
 } from '@/components/ui/icons';
 import { useAuthStore, useConfigStore, useModelsStore } from '@/stores';
-import { apiKeysApi, providersApi, authFilesApi } from '@/services/api';
+import { apiKeysApi, providersApi, credentialsApi } from '@/services/api';
 import { formatDateTime } from '@/utils/format';
 import { normalizeApiKeyList } from '@/utils/apiKeys';
 import styles from './DashboardPage.module.scss';
@@ -54,10 +54,10 @@ export function DashboardPage() {
 
   const [stats, setStats] = useState<{
     apiKeys: number | null;
-    authFiles: number | null;
+    credentials: number | null;
   }>({
     apiKeys: null,
-    authFiles: null
+    credentials: null
   });
 
   const [providerStats, setProviderStats] = useState<ProviderStats>({
@@ -118,7 +118,7 @@ export function DashboardPage() {
       try {
         const [keysRes, filesRes, geminiRes, codexRes, claudeRes, openaiRes] = await Promise.allSettled([
           apiKeysApi.list(),
-          authFilesApi.list(),
+          credentialsApi.list(),
           providersApi.getGeminiKeys(),
           providersApi.getCodexConfigs(),
           providersApi.getClaudeConfigs(),
@@ -127,7 +127,7 @@ export function DashboardPage() {
 
         setStats({
           apiKeys: keysRes.status === 'fulfilled' ? keysRes.value.length : null,
-          authFiles: filesRes.status === 'fulfilled' ? filesRes.value.files.length : null
+          credentials: filesRes.status === 'fulfilled' ? filesRes.value.files.length : null
         });
 
         setProviderStats({
@@ -187,11 +187,11 @@ export function DashboardPage() {
         : undefined
     },
     {
-      label: t('nav.auth_files'),
-      value: stats.authFiles ?? '-',
+      label: t('nav.credentials'),
+      value: stats.credentials ?? '-',
       icon: <IconFileText size={24} />,
-      path: '/auth-files',
-      loading: loading && stats.authFiles === null,
+      path: '/credentials',
+      loading: loading && stats.credentials === null,
       sublabel: t('dashboard.oauth_credentials')
     },
     {

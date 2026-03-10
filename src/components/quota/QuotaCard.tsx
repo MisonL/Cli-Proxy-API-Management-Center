@@ -5,7 +5,7 @@
 import { useTranslation } from 'react-i18next';
 import type { ReactElement, ReactNode } from 'react';
 import type { TFunction } from 'i18next';
-import type { AuthFileItem, ResolvedTheme, ThemeColors } from '@/types';
+import type { CredentialItem, ResolvedTheme, ThemeColors } from '@/types';
 import { TYPE_COLORS } from '@/utils/quota';
 import styles from '@/pages/QuotaPage.module.scss';
 
@@ -57,7 +57,7 @@ export interface QuotaRenderHelpers {
 }
 
 interface QuotaCardProps<TState extends QuotaStatusState> {
-  item: AuthFileItem;
+  item: CredentialItem;
   quota?: TState;
   resolvedTheme: ResolvedTheme;
   i18nPrefix: string;
@@ -93,7 +93,7 @@ export function QuotaCard<TState extends QuotaStatusState>({
   const idleMessageKey = cardIdleMessageKey ?? `${i18nPrefix}.idle`;
 
   const getTypeLabel = (type: string): string => {
-    const key = `auth_files.filter_${type}`;
+    const key = `credentials.filter_${type}`;
     const translated = t(key);
     if (translated !== key) return translated;
     if (type.toLowerCase() === 'iflow') return 'iFlow';

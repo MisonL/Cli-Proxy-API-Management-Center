@@ -1,4 +1,4 @@
-export interface AuthFileModelItem {
+export interface CredentialModelItem {
   id: string;
   display_name?: string;
   type?: string;

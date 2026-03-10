@@ -60,19 +60,19 @@ export function buildSourceInfoMap(input: SourceInfoMapInput): Map<string, Sourc
 
 export function resolveSourceDisplay(
   sourceRaw: string,
-  authIndex: unknown,
+  selectionKey: unknown,
   sourceInfoMap: Map<string, SourceInfo>,
-  authFileMap: Map<string, CredentialInfo>
+  credentialMap: Map<string, CredentialInfo>
 ): SourceInfo {
   const source = sourceRaw.trim();
   const matched = sourceInfoMap.get(source);
   if (matched) return matched;
 
-  const authIndexKey = normalizeAuthIndex(authIndex);
-  if (authIndexKey) {
-    const authInfo = authFileMap.get(authIndexKey);
+  const selectionKeyValue = normalizeAuthIndex(selectionKey);
+  if (selectionKeyValue) {
+    const authInfo = credentialMap.get(selectionKeyValue);
     if (authInfo) {
-      return { displayName: authInfo.name || authIndexKey, type: authInfo.type };
+      return { displayName: authInfo.name || selectionKeyValue, type: authInfo.type };
     }
   }
 

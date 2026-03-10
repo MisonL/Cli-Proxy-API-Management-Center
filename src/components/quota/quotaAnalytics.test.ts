@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { TFunction } from 'i18next';
-import { buildProviderAnalytics } from './quotaAnalytics';
-import type { AuthFileItem } from '@/types/authFile';
+import { buildProviderAnalytics, buildProviderAnalyticsFromOverview } from './quotaAnalytics';
+import type { CredentialItem } from '@/types/credential';
 import type { UsageDetail } from '@/utils/usage';
 import type { CodexQuotaState } from '@/types/quota';
 
@@ -59,14 +59,14 @@ describe('buildProviderAnalytics', () => {
   it('为支持真实额度的渠道生成分布图和健康度', () => {
     const t = createTranslator();
     const now = Date.now();
-    const files: AuthFileItem[] = [
-      { name: 'codex-a.json', type: 'codex', authIndex: 'auth-a' },
-      { name: 'codex-b.json', type: 'codex', authIndex: 'auth-b' },
+    const files: CredentialItem[] = [
+      { name: 'codex-a.json', type: 'codex', selectionKey: 'auth-a' },
+      { name: 'codex-b.json', type: 'codex', selectionKey: 'auth-b' },
     ];
     const usageDetails: UsageDetail[] = [
       {
         timestamp: new Date(now - 30 * 60 * 1000).toISOString(),
-        auth_index: 'auth-a' as unknown as number,
+        selection_key: 'auth-a' as unknown as number,
         source: '',
         failed: false,
         tokens: {
@@ -80,7 +80,7 @@ describe('buildProviderAnalytics', () => {
       },
       {
         timestamp: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
-        auth_index: 'auth-b' as unknown as number,
+        selection_key: 'auth-b' as unknown as number,
         source: '',
         failed: true,
         tokens: {
@@ -142,24 +142,28 @@ describe('buildProviderAnalytics', () => {
     expect(analytics.warnings.length).toBeGreaterThan(0);
     expect(analytics.warnings.some((item) => item.message === 'health-low')).toBe(true);
     expect(
-      analytics.histogramDatasets.find((item) => item.id === 'five-hour')?.bucketItems[2]?.map((entry) => entry.fileName)
+      analytics.histogramDatasets
+        .find((item) => item.id === 'five-hour')
+        ?.bucketItems[2]?.map((entry) => entry.fileName)
     ).toEqual(['codex-a.json']);
     expect(
-      analytics.histogramDatasets.find((item) => item.id === 'five-hour')?.bucketItems[7]?.map((entry) => entry.fileName)
+      analytics.histogramDatasets
+        .find((item) => item.id === 'five-hour')
+        ?.bucketItems[7]?.map((entry) => entry.fileName)
     ).toEqual(['codex-b.json']);
   });
 
   it('为无真实额度快照的渠道降级为 usage 统计', () => {
     const t = createTranslator();
     const now = Date.now();
-    const files: AuthFileItem[] = [
-      { name: 'qwen-a.json', type: 'qwen', authIndex: 'qwen-a', unavailable: true },
-      { name: 'qwen-b.json', type: 'qwen', authIndex: 'qwen-b', disabled: true },
+    const files: CredentialItem[] = [
+      { name: 'qwen-a.json', type: 'qwen', selectionKey: 'qwen-a', unavailable: true },
+      { name: 'qwen-b.json', type: 'qwen', selectionKey: 'qwen-b', disabled: true },
     ];
     const usageDetails: UsageDetail[] = [
       {
         timestamp: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
-        auth_index: 'qwen-a' as unknown as number,
+        selection_key: 'qwen-a' as unknown as number,
         source: '',
         failed: false,
         tokens: {
@@ -186,13 +190,13 @@ describe('buildProviderAnalytics', () => {
   it('支持按自定义阈值调整预警命中', () => {
     const t = createTranslator();
     const now = Date.now();
-    const files: AuthFileItem[] = [
-      { name: 'codex-a.json', type: 'codex', authIndex: 'auth-a' },
+    const files: CredentialItem[] = [
+      { name: 'codex-a.json', type: 'codex', selectionKey: 'auth-a' },
     ];
     const usageDetails: UsageDetail[] = [
       {
         timestamp: new Date(now - 60 * 60 * 1000).toISOString(),
-        auth_index: 'auth-a' as unknown as number,
+        selection_key: 'auth-a' as unknown as number,
         source: '',
         failed: false,
         tokens: {
@@ -231,5 +235,75 @@ describe('buildProviderAnalytics', () => {
 
     expect(analytics.warnings.some((item) => item.message === 'health-low')).toBe(true);
     expect(analytics.warnings.some((item) => item.message.startsWith('risk-'))).toBe(true);
+  });
+
+  it('支持直接消费平台 overview 聚合结果', () => {
+    const t = createTranslator();
+    const analytics = buildProviderAnalyticsFromOverview(t, 'codex', {
+      provider: 'codex',
+      mode: 'quota',
+      total_credentials: 3,
+      active_credentials: 3,
+      disabled_credentials: 0,
+      unavailable_credentials: 1,
+      loaded_credentials: 3,
+      failed_quota_credentials: 0,
+      histogram_labels: ['90-100%', '80-90%'],
+      histogram_datasets: [
+        {
+          id: 'five-hour',
+          label: '5h',
+          color: '#2563eb',
+          counts: [2, 1],
+          average_remaining: 84,
+          bucket_items: [
+            [
+              {
+                credential_id: 'a',
+                credential_name: 'codex-a.json',
+                remaining_percent: 96,
+              },
+            ],
+            [
+              {
+                credential_id: 'b',
+                credential_name: 'codex-b.json',
+                remaining_percent: 82,
+              },
+            ],
+          ],
+        },
+      ],
+      window_stats: [
+        {
+          id: '24h',
+          label: '24h',
+          request_count: 12,
+          token_count: 3456,
+          failure_count: 1,
+          failure_rate: 8.3,
+          active_credential_count: 2,
+          active_pool_percent: 66.7,
+          avg_daily_requests: 12,
+          avg_daily_tokens: 3456,
+        },
+      ],
+      conservative_health: 82,
+      average_health: 88,
+      operational_health: 91,
+      conservative_risk_days: 5,
+      average_risk_days: 8,
+      avg_daily_quota_burn_percent: 12,
+      active_pool_percent_7d: 66.7,
+      note: 'ready',
+      warnings: [],
+      generated_at: new Date().toISOString(),
+    });
+
+    expect(analytics.mode).toBe('quota');
+    expect(analytics.totalFiles).toBe(3);
+    expect(analytics.histogramDatasets[0]?.bucketItems[0]?.[0]?.fileName).toBe('codex-a.json');
+    expect(analytics.windowStats[0]?.requestCount).toBe(12);
+    expect(analytics.conservativeHealth).toBe(82);
   });
 });

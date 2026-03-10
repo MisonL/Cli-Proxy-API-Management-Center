@@ -6,7 +6,7 @@ import type { AxiosRequestConfig } from 'axios';
 import { apiClient } from './client';
 
 export interface ApiCallRequest {
-  authIndex?: string;
+  selectionKey?: string;
   method: string;
   url: string;
   header?: Record<string, string>;
@@ -19,6 +19,22 @@ export interface ApiCallResult<T = unknown> {
   bodyText: string;
   body: T | null;
 }
+
+export interface ApiCallBatchRequestItem extends ApiCallRequest {
+  key: string;
+}
+
+export interface ApiCallBatchResult<T = unknown> extends ApiCallResult<T> {
+  key: string;
+}
+
+const normalizeRequestPayload = (payload: ApiCallRequest) => {
+  const { selectionKey, ...rest } = payload;
+  return {
+    ...rest,
+    selection_key: selectionKey ?? '',
+  };
+};
 
 const normalizeBody = (input: unknown): { bodyText: string; body: unknown | null } => {
   if (input === undefined || input === null) {
@@ -78,11 +94,12 @@ export const getApiCallErrorMessage = (result: ApiCallResult): string => {
 };
 
 export const apiCallApi = {
-  request: async (
-    payload: ApiCallRequest,
-    config?: AxiosRequestConfig
-  ): Promise<ApiCallResult> => {
-    const response = await apiClient.post<Record<string, unknown>>('/api-call', payload, config);
+  request: async (payload: ApiCallRequest, config?: AxiosRequestConfig): Promise<ApiCallResult> => {
+    const response = await apiClient.post<Record<string, unknown>>(
+      '/api-call',
+      normalizeRequestPayload(payload),
+      config
+    );
     const statusCode = Number(response?.status_code ?? response?.statusCode ?? 0);
     const header = (response?.header ?? response?.headers ?? {}) as Record<string, string[]>;
     const { bodyText, body } = normalizeBody(response?.body);
@@ -91,7 +108,34 @@ export const apiCallApi = {
       statusCode,
       header,
       bodyText,
-      body
+      body,
     };
-  }
+  },
+};
+
+export const apiCallBatchApi = {
+  request: async (
+    payload: { items: ApiCallBatchRequestItem[] },
+    config?: AxiosRequestConfig
+  ): Promise<ApiCallBatchResult[]> => {
+    const response = await apiClient.post<{ items?: Array<Record<string, unknown>> }>(
+      '/api-call/batch',
+      { items: payload.items.map((item) => normalizeRequestPayload(item)) },
+      config
+    );
+
+    return (response?.items ?? []).map((item) => {
+      const statusCode = Number(item?.status_code ?? item?.statusCode ?? 0);
+      const header = (item?.header ?? item?.headers ?? {}) as Record<string, string[]>;
+      const { bodyText, body } = normalizeBody(item?.body);
+
+      return {
+        key: String(item?.key ?? ''),
+        statusCode,
+        header,
+        bodyText,
+        body,
+      };
+    });
+  },
 };

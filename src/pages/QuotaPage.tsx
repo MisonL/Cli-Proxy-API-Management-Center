@@ -2,11 +2,11 @@
  * Quota management page - coordinates the three quota sections.
  */
 
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useAuthStore, useNotificationStore, useUsageStatsStore } from '@/stores';
-import { authFilesApi, configFileApi } from '@/services/api';
+import { credentialsApi, configFileApi, platformApi, type ProviderOverviewResponse } from '@/services/api';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import {
@@ -18,9 +18,10 @@ import {
   GEMINI_CLI_CONFIG,
   KIMI_CONFIG,
 } from '@/components/quota';
-import type { AuthFileItem } from '@/types';
-import { getTypeLabel, QUOTA_PROVIDER_TYPES } from '@/features/authFiles/constants';
+import type { CredentialItem } from '@/types';
+import { getTypeLabel, QUOTA_PROVIDER_TYPES } from '@/features/credentials/constants';
 import {
+  buildProviderAnalyticsFromOverview,
   DEFAULT_QUOTA_WARNING_THRESHOLDS,
   type QuotaWarningThresholds,
 } from '@/components/quota/quotaAnalytics';
@@ -35,6 +36,14 @@ import { downloadBlob } from '@/utils/download';
 import styles from './QuotaPage.module.scss';
 
 const ANALYTICS_ONLY_PROVIDER_ORDER = ['qwen', 'gemini', 'vertex', 'iflow', 'aistudio', 'unknown'];
+const PLATFORM_PROVIDER_ORDER = [
+  'claude',
+  'antigravity',
+  'codex',
+  'gemini-cli',
+  'kimi',
+  ...ANALYTICS_ONLY_PROVIDER_ORDER,
+];
 const WARNING_THRESHOLD_FIELDS = [
   { key: 'healthLowPercent', label: 'quota_management.analytics.warning_settings_health', max: 100 },
   { key: 'riskDays', label: 'quota_management.analytics.warning_settings_risk_days', max: 30 },
@@ -52,7 +61,10 @@ export function QuotaPage() {
   const usageError = useUsageStatsStore((state) => state.error);
   const loadUsageStats = useUsageStatsStore((state) => state.loadUsageStats);
 
-  const [files, setFiles] = useState<AuthFileItem[]>([]);
+  const [files, setFiles] = useState<CredentialItem[]>([]);
+  const [platformMode, setPlatformMode] = useState(false);
+  const [providerOverviews, setProviderOverviews] = useState<Record<string, ProviderOverviewResponse>>({});
+  const [platformOverviewErrors, setPlatformOverviewErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [warningThresholds, setWarningThresholds] = useState<QuotaWarningThresholds>(
@@ -61,6 +73,48 @@ export function QuotaPage() {
   const thresholdImportRef = useRef<HTMLInputElement | null>(null);
 
   const disableControls = connectionStatus !== 'connected';
+
+  const loadPlatformOverviews = useCallback(async (): Promise<boolean> => {
+    try {
+      const status = await platformApi.getStatus();
+      if (!status?.enabled) {
+        setPlatformMode(false);
+        setProviderOverviews({});
+        setPlatformOverviewErrors({});
+        return false;
+      }
+
+      const overviewResults = await Promise.allSettled(
+        PLATFORM_PROVIDER_ORDER.map(async (providerKey) => ({
+          providerKey,
+          overview: await platformApi.getProviderOverview(providerKey),
+        }))
+      );
+
+      const nextOverviews: Record<string, ProviderOverviewResponse> = {};
+      const nextErrors: Record<string, string> = {};
+      overviewResults.forEach((result, index) => {
+        const providerKey = PLATFORM_PROVIDER_ORDER[index];
+        if (result.status === 'fulfilled') {
+          nextOverviews[result.value.providerKey] = result.value.overview;
+          return;
+        }
+        nextErrors[providerKey] =
+          result.reason instanceof Error ? result.reason.message : t('notification.refresh_failed');
+      });
+
+      setPlatformMode(true);
+      setProviderOverviews(nextOverviews);
+      setPlatformOverviewErrors(nextErrors);
+      setFiles([]);
+      return true;
+    } catch {
+      setPlatformMode(false);
+      setProviderOverviews({});
+      setPlatformOverviewErrors({});
+      return false;
+    }
+  }, [t]);
 
   const loadConfig = useCallback(async () => {
     try {
@@ -71,22 +125,32 @@ export function QuotaPage() {
     }
   }, [t]);
 
-  const loadFiles = useCallback(async () => {
+  const loadFiles = useCallback(async (): Promise<boolean> => {
     setLoading(true);
     setError('');
     try {
-      const data = await authFilesApi.list();
+      const isPlatformMode = await loadPlatformOverviews();
+      if (isPlatformMode) {
+        return true;
+      }
+      const data = await credentialsApi.list();
       setFiles(data?.files || []);
+      return false;
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : t('notification.refresh_failed');
       setError(errorMessage);
+      return false;
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, [loadPlatformOverviews, t]);
 
   const handleHeaderRefresh = useCallback(async () => {
-    await Promise.all([loadConfig(), loadFiles(), loadUsageStats({ force: true })]);
+    const isPlatformMode = await loadFiles();
+    await loadConfig();
+    if (!isPlatformMode) {
+      await loadUsageStats({ force: true });
+    }
   }, [loadConfig, loadFiles, loadUsageStats]);
 
   useHeaderRefresh(handleHeaderRefresh);
@@ -100,21 +164,38 @@ export function QuotaPage() {
   }, [warningThresholds]);
 
   useEffect(() => {
-    loadFiles();
-    loadConfig();
-    void loadUsageStats();
+    void (async () => {
+      const isPlatformMode = await loadFiles();
+      await loadConfig();
+      if (!isPlatformMode) {
+        void loadUsageStats();
+      }
+    })();
   }, [loadFiles, loadConfig, loadUsageStats]);
+
+  const platformAnalytics = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(providerOverviews).map(([providerKey, overview]) => [
+          providerKey,
+          buildProviderAnalyticsFromOverview(t, providerKey, overview, warningThresholds),
+        ])
+      ),
+    [providerOverviews, t, warningThresholds]
+  );
 
   const analyticsOnlyProviders = Array.from(
     new Set(
-      files
-        .map((file) =>
-          String(file.type || file.provider || 'unknown')
-            .trim()
-            .toLowerCase()
-        )
-        .filter(Boolean)
-        .filter((provider) => !QUOTA_PROVIDER_TYPES.has(provider as never))
+      platformMode
+        ? []
+        : files
+            .map((file) =>
+              String(file.type || file.provider || 'unknown')
+                .trim()
+                .toLowerCase()
+            )
+            .filter(Boolean)
+            .filter((provider) => !QUOTA_PROVIDER_TYPES.has(provider as never))
     )
   ).sort((a, b) => {
     const orderA = ANALYTICS_ONLY_PROVIDER_ORDER.indexOf(a);
@@ -171,7 +252,13 @@ export function QuotaPage() {
       </div>
 
       {error && <div className={styles.errorBox}>{error}</div>}
-      {usageError && <div className={styles.errorBox}>{usageError}</div>}
+      {!platformMode && usageError && <div className={styles.errorBox}>{usageError}</div>}
+      {platformMode &&
+        Object.entries(platformOverviewErrors).map(([providerKey, message]) => (
+          <div key={providerKey} className={styles.errorBox}>
+            {`${getTypeLabel(t, providerKey)}: ${message}`}
+          </div>
+        ))}
 
       <Card
         title={t('quota_management.analytics.warning_settings_title')}
@@ -224,52 +311,78 @@ export function QuotaPage() {
         </div>
       </Card>
 
-      <QuotaSection
-        config={CLAUDE_CONFIG}
-        files={files}
-        loading={loading}
-        disabled={disableControls}
-        usageDetails={usageDetails}
-        usageLoading={usageLoading}
-        warningThresholds={warningThresholds}
-      />
-      <QuotaSection
-        config={ANTIGRAVITY_CONFIG}
-        files={files}
-        loading={loading}
-        disabled={disableControls}
-        usageDetails={usageDetails}
-        usageLoading={usageLoading}
-        warningThresholds={warningThresholds}
-      />
-      <QuotaSection
-        config={CODEX_CONFIG}
-        files={files}
-        loading={loading}
-        disabled={disableControls}
-        usageDetails={usageDetails}
-        usageLoading={usageLoading}
-        warningThresholds={warningThresholds}
-      />
-      <QuotaSection
-        config={GEMINI_CLI_CONFIG}
-        files={files}
-        loading={loading}
-        disabled={disableControls}
-        usageDetails={usageDetails}
-        usageLoading={usageLoading}
-        warningThresholds={warningThresholds}
-      />
-      <QuotaSection
-        config={KIMI_CONFIG}
-        files={files}
-        loading={loading}
-        disabled={disableControls}
-        usageDetails={usageDetails}
-        usageLoading={usageLoading}
-        warningThresholds={warningThresholds}
-      />
+      {platformMode ? (
+        PLATFORM_PROVIDER_ORDER.map((providerKey) => {
+          const overview = providerOverviews[providerKey];
+          if (!overview || overview.total_credentials <= 0) {
+            return null;
+          }
+          return (
+            <QuotaAnalyticsSection
+              key={providerKey}
+              providerKey={providerKey}
+              providerLabel={getTypeLabel(t, providerKey)}
+              files={[]}
+              usageDetails={[]}
+              loading={loading}
+              disabled={disableControls}
+              warningThresholds={warningThresholds}
+              totalCount={overview.total_credentials}
+              precomputedAnalytics={platformAnalytics[providerKey]}
+            />
+          );
+        })
+      ) : (
+        <>
+          <QuotaSection
+            config={CLAUDE_CONFIG}
+            files={files}
+            loading={loading}
+            disabled={disableControls}
+            usageDetails={usageDetails}
+            usageLoading={usageLoading}
+            warningThresholds={warningThresholds}
+          />
+          <QuotaSection
+            config={ANTIGRAVITY_CONFIG}
+            files={files}
+            loading={loading}
+            disabled={disableControls}
+            usageDetails={usageDetails}
+            usageLoading={usageLoading}
+            warningThresholds={warningThresholds}
+          />
+          <QuotaSection
+            config={CODEX_CONFIG}
+            files={files}
+            loading={loading}
+            disabled={disableControls}
+            usageDetails={usageDetails}
+            usageLoading={usageLoading}
+            warningThresholds={warningThresholds}
+          />
+          <QuotaSection
+            config={GEMINI_CLI_CONFIG}
+            files={files}
+            loading={loading}
+            disabled={disableControls}
+            usageDetails={usageDetails}
+            usageLoading={usageLoading}
+            warningThresholds={warningThresholds}
+          />
+          <QuotaSection
+            config={KIMI_CONFIG}
+            files={files}
+            loading={loading}
+            disabled={disableControls}
+            usageDetails={usageDetails}
+            usageLoading={usageLoading}
+            warningThresholds={warningThresholds}
+          />
+        </>
+      )}
       {analyticsOnlyProviders.map((providerKey) => {
+        if (platformMode) return null;
         const providerFiles = files.filter(
           (file) =>
             String(file.type || file.provider || 'unknown')

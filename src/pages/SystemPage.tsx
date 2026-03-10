@@ -14,7 +14,13 @@ import {
   useModelsStore,
   useThemeStore,
 } from '@/stores';
-import { configApi, systemApi } from '@/services/api';
+import {
+  configApi,
+  platformApi,
+  systemApi,
+  type PlatformStatusResponse,
+  type QuotaRefreshPolicy,
+} from '@/services/api';
 import { apiKeysApi } from '@/services/api/apiKeys';
 import { classifyModels } from '@/utils/models';
 import { STORAGE_KEY_AUTH } from '@/utils/constants';
@@ -43,6 +49,14 @@ import {
 import { formatDateTime } from '@/utils/format';
 import { normalizeApiKeyList } from '@/utils/apiKeys';
 import type { UsagePersistenceStatus } from '@/types';
+
+const getStatusCode = (error: unknown): number | null => {
+  if (!error || typeof error !== 'object') return null;
+  if ('status' in error && typeof (error as { status?: unknown }).status === 'number') {
+    return (error as { status: number }).status;
+  }
+  return null;
+};
 
 const MODEL_CATEGORY_ICONS: Record<string, string | { light: string; dark: string }> = {
   gpt: { light: iconOpenaiLight, dark: iconOpenaiDark },
@@ -86,6 +100,12 @@ export function SystemPage() {
   const [persistenceStatus, setPersistenceStatus] = useState<UsagePersistenceStatus | null>(null);
   const [persistenceLoading, setPersistenceLoading] = useState(false);
   const [persistenceError, setPersistenceError] = useState('');
+  const [platformStatus, setPlatformStatus] = useState<PlatformStatusResponse | null>(null);
+  const [quotaPolicies, setQuotaPolicies] = useState<QuotaRefreshPolicy[]>([]);
+  const [quotaPoliciesDraft, setQuotaPoliciesDraft] = useState<QuotaRefreshPolicy[]>([]);
+  const [platformLoading, setPlatformLoading] = useState(false);
+  const [platformSaving, setPlatformSaving] = useState(false);
+  const [platformError, setPlatformError] = useState('');
 
   const apiKeysCache = useRef<string[]>([]);
   const versionTapCount = useRef(0);
@@ -99,6 +119,7 @@ export function SystemPage() {
   const requestLogEnabled = config?.requestLog ?? false;
   const requestLogDirty = requestLogDraft !== requestLogEnabled;
   const canEditRequestLog = auth.connectionStatus === 'connected' && Boolean(config);
+  const quotaPoliciesDirty = JSON.stringify(quotaPoliciesDraft) !== JSON.stringify(quotaPolicies);
 
   const appVersion = __APP_VERSION__ || t('system_info.version_unknown');
   const apiVersion = auth.serverVersion || t('system_info.version_unknown');
@@ -209,14 +230,45 @@ export function SystemPage() {
     }
   }, [t]);
 
+  const loadPlatformSettings = useCallback(async () => {
+    setPlatformLoading(true);
+    setPlatformError('');
+    try {
+      const status = await platformApi.getStatus();
+      if (!status?.enabled) {
+        setPlatformStatus(status ?? null);
+        setQuotaPolicies([]);
+        setQuotaPoliciesDraft([]);
+        return;
+      }
+      const policyResponse = await platformApi.getQuotaRefreshPolicies();
+      setPlatformStatus(status ?? null);
+      setQuotaPolicies(policyResponse?.policies ?? []);
+      setQuotaPoliciesDraft(policyResponse?.policies ?? []);
+    } catch (error: unknown) {
+      const statusCode = getStatusCode(error);
+      setPlatformStatus(null);
+      setQuotaPolicies([]);
+      setQuotaPoliciesDraft([]);
+      if (statusCode === 404 || statusCode === 503) {
+        setPlatformError('');
+        return;
+      }
+      setPlatformError(normalizeSystemErrorMessage(error, t('notification.refresh_failed')));
+    } finally {
+      setPlatformLoading(false);
+    }
+  }, [t]);
+
   const handleHeaderRefresh = useCallback(async () => {
     await Promise.all([
       fetchConfig(undefined, true),
       loadSelfCheck(),
       loadPersistenceStatus(),
+      loadPlatformSettings(),
       fetchModels({ forceRefresh: true }),
     ]);
-  }, [fetchConfig, fetchModels, loadPersistenceStatus, loadSelfCheck]);
+  }, [fetchConfig, fetchModels, loadPersistenceStatus, loadPlatformSettings, loadSelfCheck]);
 
   useHeaderRefresh(handleHeaderRefresh);
 
@@ -310,6 +362,10 @@ export function SystemPage() {
   }, [loadPersistenceStatus]);
 
   useEffect(() => {
+    void loadPlatformSettings();
+  }, [loadPlatformSettings]);
+
+  useEffect(() => {
     if (requestLogModalOpen && !requestLogTouched) {
       setRequestLogDraft(requestLogEnabled);
     }
@@ -326,6 +382,38 @@ export function SystemPage() {
   useEffect(() => {
     void fetchModels();
   }, [fetchModels]);
+
+  const handlePolicyFieldChange = useCallback(
+    (provider: string, field: keyof QuotaRefreshPolicy, value: boolean | number) => {
+      setQuotaPoliciesDraft((prev) =>
+        prev.map((item) =>
+          item.provider === provider ? { ...item, [field]: value } : item
+        )
+      );
+    },
+    []
+  );
+
+  const handleSavePlatformPolicies = useCallback(async () => {
+    setPlatformSaving(true);
+    try {
+      const result = await platformApi.updateQuotaRefreshPolicies(quotaPoliciesDraft);
+      const nextPolicies = result?.policies ?? quotaPoliciesDraft;
+      setQuotaPolicies(nextPolicies);
+      setQuotaPoliciesDraft(nextPolicies);
+      showNotification(
+        t('system_info.platform_policy_saved', { defaultValue: '刷新策略已保存' }),
+        'success'
+      );
+    } catch (error: unknown) {
+      showNotification(
+        normalizeSystemErrorMessage(error, t('notification.update_failed')),
+        'error'
+      );
+    } finally {
+      setPlatformSaving(false);
+    }
+  }, [quotaPoliciesDraft, showNotification, t]);
 
   return (
     <div className={styles.container}>
@@ -468,6 +556,175 @@ export function SystemPage() {
                   {item.suggestion ? (
                     <div className={styles.selfCheckSuggestion}>{item.suggestion}</div>
                   ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Card
+          title={t('system_info.platform_title', { defaultValue: '平台配额刷新策略' })}
+          extra={
+            <div className={styles.aboutActions}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void loadPlatformSettings()}
+                loading={platformLoading}
+              >
+                {t('common.refresh')}
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => void handleSavePlatformPolicies()}
+                loading={platformSaving}
+                disabled={platformLoading || platformSaving || !quotaPoliciesDirty}
+              >
+                {t('common.save')}
+              </Button>
+            </div>
+          }
+        >
+          <p className={styles.sectionDescription}>
+            {t('system_info.platform_desc', {
+              defaultValue: '统一控制后端额度快照的后台刷新频率、超时与并发，页面手动刷新仍可用于加急触发。',
+            })}
+          </p>
+          {platformError && <div className="error-box">{platformError}</div>}
+          {platformStatus?.enabled ? (
+            <div className={styles.aboutInfoGrid}>
+              <div className={styles.infoTile}>
+                <div className={styles.tileLabel}>
+                  {t('system_info.platform_role', { defaultValue: '平台角色' })}
+                </div>
+                <div className={styles.tileValue}>{platformStatus.role}</div>
+                <div className={styles.tileSub}>{platformStatus.database_schema}</div>
+              </div>
+              <div className={styles.infoTile}>
+                <div className={styles.tileLabel}>
+                  {t('system_info.platform_workspace', { defaultValue: '租户 / 工作区' })}
+                </div>
+                <div className={styles.tileValue}>
+                  {platformStatus.tenant_slug} / {platformStatus.workspace_slug}
+                </div>
+                <div className={styles.tileSub}>{platformStatus.nats_stream}</div>
+              </div>
+            </div>
+          ) : null}
+          {platformLoading ? (
+            <div className="hint">{t('common.loading')}</div>
+          ) : quotaPoliciesDraft.length === 0 ? (
+            <div className="hint">
+              {t('system_info.platform_empty', { defaultValue: '当前未启用平台聚合后端。' })}
+            </div>
+          ) : (
+            <div className={styles.policyGrid}>
+              {quotaPoliciesDraft.map((policy) => (
+                <div key={policy.provider} className={styles.policyCard}>
+                  <div className={styles.policyHeader}>
+                    <div>
+                      <strong className={styles.policyTitle}>{policy.provider}</strong>
+                      <div className={styles.tileSub}>
+                        {t('system_info.platform_policy_subtitle', {
+                          defaultValue: '后台定时刷新策略',
+                        })}
+                      </div>
+                    </div>
+                    <ToggleSwitch
+                      checked={policy.enabled}
+                      onChange={(value) =>
+                        handlePolicyFieldChange(policy.provider, 'enabled', value)
+                      }
+                      ariaLabel={`${policy.provider}-enabled`}
+                    />
+                  </div>
+                  <div className={styles.policyFieldGrid}>
+                    <label className={styles.policyField}>
+                      <span>{t('system_info.platform_interval', { defaultValue: '刷新间隔(秒)' })}</span>
+                      <input
+                        className={styles.policyInput}
+                        type="number"
+                        min={30}
+                        step={30}
+                        value={policy.interval_seconds}
+                        onChange={(event) =>
+                          handlePolicyFieldChange(
+                            policy.provider,
+                            'interval_seconds',
+                            Number(event.target.value) || 0
+                          )
+                        }
+                      />
+                    </label>
+                    <label className={styles.policyField}>
+                      <span>{t('system_info.platform_timeout', { defaultValue: '单次超时(秒)' })}</span>
+                      <input
+                        className={styles.policyInput}
+                        type="number"
+                        min={5}
+                        step={5}
+                        value={policy.timeout_seconds}
+                        onChange={(event) =>
+                          handlePolicyFieldChange(
+                            policy.provider,
+                            'timeout_seconds',
+                            Number(event.target.value) || 0
+                          )
+                        }
+                      />
+                    </label>
+                    <label className={styles.policyField}>
+                      <span>{t('system_info.platform_parallelism', { defaultValue: '并发数' })}</span>
+                      <input
+                        className={styles.policyInput}
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={policy.max_parallelism}
+                        onChange={(event) =>
+                          handlePolicyFieldChange(
+                            policy.provider,
+                            'max_parallelism',
+                            Number(event.target.value) || 0
+                          )
+                        }
+                      />
+                    </label>
+                    <label className={styles.policyField}>
+                      <span>{t('system_info.platform_stale_after', { defaultValue: '过期阈值(秒)' })}</span>
+                      <input
+                        className={styles.policyInput}
+                        type="number"
+                        min={60}
+                        step={60}
+                        value={policy.stale_after_seconds}
+                        onChange={(event) =>
+                          handlePolicyFieldChange(
+                            policy.provider,
+                            'stale_after_seconds',
+                            Number(event.target.value) || 0
+                          )
+                        }
+                      />
+                    </label>
+                    <label className={styles.policyField}>
+                      <span>{t('system_info.platform_backoff', { defaultValue: '失败退避(秒)' })}</span>
+                      <input
+                        className={styles.policyInput}
+                        type="number"
+                        min={0}
+                        step={30}
+                        value={policy.failure_backoff_seconds}
+                        onChange={(event) =>
+                          handlePolicyFieldChange(
+                            policy.provider,
+                            'failure_backoff_seconds',
+                            Number(event.target.value) || 0
+                          )
+                        }
+                      />
+                    </label>
+                  </div>
                 </div>
               ))}
             </div>

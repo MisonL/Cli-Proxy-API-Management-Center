@@ -221,21 +221,11 @@ export function VisualConfigEditor({ values, validationErrors, disabled = false,
       </ConfigSection>
 
       <ConfigSection title={t('config_management.visual.sections.auth.title')} description={t('config_management.visual.sections.auth.description')}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <Input
-            label={t('config_management.visual.sections.auth.auth_dir')}
-            placeholder="~/.cli-proxy-api"
-            value={values.authDir}
-            onChange={(e) => onChange({ authDir: e.target.value })}
-            disabled={disabled}
-            hint={t('config_management.visual.sections.auth.auth_dir_hint')}
-          />
-          <ApiKeysCardEditor
-            value={values.apiKeysText}
-            disabled={disabled}
-            onChange={handleApiKeysTextChange}
-          />
-        </div>
+        <ApiKeysCardEditor
+          value={values.apiKeysText}
+          disabled={disabled}
+          onChange={handleApiKeysTextChange}
+        />
       </ConfigSection>
 
       <ConfigSection title={t('config_management.visual.sections.system.title')} description={t('config_management.visual.sections.system.description')}>

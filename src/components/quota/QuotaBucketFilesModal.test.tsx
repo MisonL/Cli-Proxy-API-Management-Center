@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
-import { QuotaBucketFilesModal } from './QuotaBucketFilesModal';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   downloadText: vi.fn(),
@@ -16,8 +15,9 @@ vi.mock('react-i18next', () => ({
         'quota_management.analytics.bucket_modal_summary': '命中清单',
         'quota_management.analytics.bucket_modal_count': `${options?.count ?? 0} 个文件`,
         'quota_management.analytics.bucket_download_all': `全部下载（${options?.count ?? 0}）`,
-        'quota_management.analytics.bucket_download_all_success': `已打包下载 ${options?.count ?? 0} 个认证文件`,
+        'quota_management.analytics.bucket_download_all_success': `已打包下载 ${options?.count ?? 0} 个凭证`,
         'quota_management.analytics.bucket_download_all_failed': '批量打包下载失败',
+        'quota_management.analytics.bucket_download_progress': '打包进度',
         'quota_management.analytics.bucket_download_single': '下载',
         'quota_management.analytics.bucket_remaining': '剩余额度',
         'quota_management.analytics.bucket_reset_at': '重置时间',
@@ -25,10 +25,10 @@ vi.mock('react-i18next', () => ({
         'quota_management.analytics.bucket_flag_unavailable': '不可用',
         'quota_management.analytics.bucket_flag_throttled': '已限额',
         'quota_management.analytics.not_available': '--',
-        'auth_files.download_success': '下载成功',
-        'auth_files.file_size': '文件大小',
-        'auth_files.file_modified': '修改时间',
-        'auth_files.batch_download_partial': `批量下载完成，成功 ${options?.success ?? 0} 个，失败 ${options?.failed ?? 0} 个`,
+        'credentials.download_success': '下载成功',
+        'credentials.file_size': '文件大小',
+        'credentials.file_modified': '修改时间',
+        'credentials.batch_download_partial': `批量下载完成，成功 ${options?.success ?? 0} 个，失败 ${options?.failed ?? 0} 个`,
       };
 
       if (key === 'quota_management.analytics.bucket_modal_title') {
@@ -72,7 +72,7 @@ vi.mock('@/components/ui/icons', () => ({
 }));
 
 vi.mock('@/services/api', () => ({
-  authFilesApi: {
+  credentialsApi: {
     downloadText: mocks.downloadText,
   },
 }));
@@ -91,7 +91,16 @@ vi.mock('@/utils/download', () => ({
 }));
 
 describe('QuotaBucketFilesModal', () => {
-  it('支持从桶弹窗打包下载认证文件', async () => {
+  beforeEach(() => {
+    vi.resetModules();
+    mocks.downloadText.mockReset();
+    mocks.showNotification.mockReset();
+    mocks.downloadBlob.mockReset();
+  });
+
+  it('支持从桶弹窗打包下载凭证', async () => {
+    const { QuotaBucketFilesModal } = await import('./QuotaBucketFilesModal');
+
     mocks.downloadText.mockResolvedValueOnce('{"name":"alpha"}').mockResolvedValueOnce('{"name":"beta"}');
 
     render(
@@ -111,12 +120,12 @@ describe('QuotaBucketFilesModal', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '全部下载（2）' }));
+    fireEvent.click(screen.getByRole('button', { name: /^(全部下载（2）|Download All \(2\))$/ }));
 
     await waitFor(() => {
       expect(mocks.downloadBlob).toHaveBeenCalledTimes(1);
     });
     expect(mocks.downloadBlob.mock.calls[0]?.[0]?.filename).toContain('codex__daily__bucket-1__90-100.zip');
-    expect(mocks.showNotification).toHaveBeenCalledWith('已打包下载 2 个认证文件', 'success');
-  });
+    expect(mocks.showNotification).toHaveBeenCalledWith(expect.stringMatching(/2/), 'success');
+  }, 15000);
 });

@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import type { AuthFileItem } from '@/types/authFile';
+import type { CredentialItem } from '@/types/credential';
 import type {
   AntigravityQuotaGroup,
   AntigravityQuotaState,
@@ -18,6 +18,7 @@ import {
   normalizeUsageSourceId,
   type UsageDetail,
 } from '@/utils/usage';
+import type { ProviderOverviewResponse } from '@/services/api/platform';
 
 export const QUOTA_ANALYTICS_BUCKET_LABELS = [
   '90-100%',
@@ -62,6 +63,7 @@ type QuotaMetricObservation = {
 };
 
 export type AnalyticsBucketItem = {
+  credentialId?: string;
   fileName: string;
   remainingPercent: number;
   resetAt?: string;
@@ -146,11 +148,6 @@ const clampPercent = (value: number | null | undefined): number | null => {
   return Math.min(100, Math.max(0, value));
 };
 
-const getProviderKey = (file: AuthFileItem): string =>
-  String(file.type || file.provider || 'unknown')
-    .trim()
-    .toLowerCase();
-
 const parseDateMs = (value: unknown): number | null => {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value < 1e12 ? value * 1000 : value;
@@ -168,14 +165,14 @@ const parseDateMs = (value: unknown): number | null => {
   return null;
 };
 
-const getAuthIndexSet = (files: AuthFileItem[]) =>
+const getSelectionKeySet = (files: CredentialItem[]) =>
   new Set(
     files
-      .map((file) => normalizeAuthIndex(file['auth_index'] ?? file.authIndex))
+      .map((file) => normalizeAuthIndex(file.selectionKey))
       .filter((value): value is string => Boolean(value))
   );
 
-const getSourceIdSet = (files: AuthFileItem[]) => {
+const getSourceIdSet = (files: CredentialItem[]) => {
   const sourceIds = new Set<string>();
   files.forEach((file) => {
     const name = String(file.name || '').trim();
@@ -189,13 +186,13 @@ const getSourceIdSet = (files: AuthFileItem[]) => {
   return sourceIds;
 };
 
-const collectProviderUsage = (files: AuthFileItem[], usageDetails: UsageDetail[]) => {
-  const authIndexSet = getAuthIndexSet(files);
+const collectProviderUsage = (files: CredentialItem[], usageDetails: UsageDetail[]) => {
+  const selectionKeySet = getSelectionKeySet(files);
   const sourceIdSet = getSourceIdSet(files);
 
   return usageDetails.filter((detail) => {
-    const detailAuthIndex = normalizeAuthIndex(detail.auth_index);
-    if (detailAuthIndex && authIndexSet.has(detailAuthIndex)) {
+    const detailAuthIndex = normalizeAuthIndex(detail.selection_key);
+    if (detailAuthIndex && selectionKeySet.has(detailAuthIndex)) {
       return true;
     }
     return Boolean(detail.source) && sourceIdSet.has(detail.source);
@@ -220,7 +217,10 @@ const hoursUntilReset = (resetAt: string | undefined, nowMs: number): number | n
   return Math.max(0, (resetMs - nowMs) / (60 * 60 * 1000));
 };
 
-const estimateDailyBurnPercent = (observation: QuotaMetricObservation, nowMs: number): number | null => {
+const estimateDailyBurnPercent = (
+  observation: QuotaMetricObservation,
+  nowMs: number
+): number | null => {
   if (!observation.windowHours || observation.windowHours <= 0) return null;
   const remainingPercent = clampPercent(observation.remainingPercent);
   if (remainingPercent === null) return null;
@@ -255,7 +255,9 @@ const bucketIndexForPercent = (percent: number) => {
   return Math.min(9, Math.max(0, index));
 };
 
-const buildHistogramDatasets = (observations: QuotaMetricObservation[]): AnalyticsHistogramDataset[] => {
+const buildHistogramDatasets = (
+  observations: QuotaMetricObservation[]
+): AnalyticsHistogramDataset[] => {
   const grouped = new Map<
     string,
     {
@@ -289,76 +291,83 @@ const buildHistogramDatasets = (observations: QuotaMetricObservation[]): Analyti
       group.values.length > 0
         ? group.values.reduce((sum, value) => sum + value, 0) / group.values.length
         : null;
-    const bucketItems = group.bucketItems.map((items) =>
-      [...items].sort((left, right) => {
-        if (right.remainingPercent !== left.remainingPercent) {
-          return right.remainingPercent - left.remainingPercent;
-        }
-        return left.fileName.localeCompare(right.fileName);
-      })
-    );
-
     return {
       id: metricId,
       label: group.label,
       color: DATASET_COLORS[index % DATASET_COLORS.length],
       counts,
       averageRemaining,
-      bucketItems,
+      bucketItems: group.bucketItems,
     };
   });
 };
 
 const buildWindowStats = (
   t: TFunction,
-  files: AuthFileItem[],
+  files: CredentialItem[],
   usageDetails: UsageDetail[]
 ): AnalyticsWindowStat[] => {
   const totalFiles = files.length;
   const nowMs = Date.now();
-  const authIndexSet = getAuthIndexSet(files);
+  const selectionKeySet = getSelectionKeySet(files);
   const sourceIdSet = getSourceIdSet(files);
+  const preparedWindows = WINDOW_DEFINITIONS.map((windowDef) => ({
+    ...windowDef,
+    startMs: nowMs - windowDef.hours * 60 * 60 * 1000,
+    requestCount: 0,
+    tokenCount: 0,
+    failureCount: 0,
+    activeCredentials: new Set<string>(),
+  }));
 
-  return WINDOW_DEFINITIONS.map((windowDef) => {
-    const windowStart = nowMs - windowDef.hours * 60 * 60 * 1000;
-    let requestCount = 0;
-    let tokenCount = 0;
-    let failureCount = 0;
-    const activeCredentials = new Set<string>();
+  usageDetails.forEach((detail) => {
+    const detailTs =
+      typeof detail.__timestampMs === 'number'
+        ? detail.__timestampMs
+        : parseDateMs(detail.timestamp);
+    if (detailTs === null || detailTs > nowMs) {
+      return;
+    }
 
-    usageDetails.forEach((detail) => {
-      const detailTs =
-        typeof detail.__timestampMs === 'number' ? detail.__timestampMs : parseDateMs(detail.timestamp);
-      if (detailTs === null || detailTs < windowStart || detailTs > nowMs) {
+    const detailTokenCount = extractTotalTokens(detail);
+    const selectionKey = normalizeAuthIndex(detail.selection_key);
+    const activeCredential =
+      selectionKey && selectionKeySet.has(selectionKey)
+        ? selectionKey
+        : detail.source && sourceIdSet.has(detail.source)
+          ? detail.source
+          : null;
+
+    preparedWindows.forEach((windowDef) => {
+      if (detailTs < windowDef.startMs) {
         return;
       }
 
-      requestCount += 1;
-      tokenCount += extractTotalTokens(detail);
+      windowDef.requestCount += 1;
+      windowDef.tokenCount += detailTokenCount;
       if (detail.failed) {
-        failureCount += 1;
+        windowDef.failureCount += 1;
       }
-
-      const authIndex = normalizeAuthIndex(detail.auth_index);
-      if (authIndex && authIndexSet.has(authIndex)) {
-        activeCredentials.add(authIndex);
-      } else if (detail.source && sourceIdSet.has(detail.source)) {
-        activeCredentials.add(detail.source);
+      if (activeCredential) {
+        windowDef.activeCredentials.add(activeCredential);
       }
     });
+  });
 
+  return preparedWindows.map((windowDef) => {
     const days = windowDef.hours / 24;
     return {
       id: windowDef.id,
       label: t(windowDef.labelKey),
-      requestCount,
-      tokenCount,
-      failureCount,
-      failureRate: requestCount > 0 ? (failureCount / requestCount) * 100 : 0,
-      activeCredentialCount: activeCredentials.size,
-      activePoolPercent: totalFiles > 0 ? (activeCredentials.size / totalFiles) * 100 : 0,
-      avgDailyRequests: days > 0 ? requestCount / days : requestCount,
-      avgDailyTokens: days > 0 ? tokenCount / days : tokenCount,
+      requestCount: windowDef.requestCount,
+      tokenCount: windowDef.tokenCount,
+      failureCount: windowDef.failureCount,
+      failureRate:
+        windowDef.requestCount > 0 ? (windowDef.failureCount / windowDef.requestCount) * 100 : 0,
+      activeCredentialCount: windowDef.activeCredentials.size,
+      activePoolPercent: totalFiles > 0 ? (windowDef.activeCredentials.size / totalFiles) * 100 : 0,
+      avgDailyRequests: days > 0 ? windowDef.requestCount / days : windowDef.requestCount,
+      avgDailyTokens: days > 0 ? windowDef.tokenCount / days : windowDef.tokenCount,
     };
   });
 };
@@ -369,9 +378,17 @@ const getSupportedProviderDefaultWindowHours = (
 ): number | null => {
   switch (providerKey) {
     case 'claude':
-      return observation.metricId.includes('five-hour') ? 5 : observation.metricId.includes('seven-day') ? 168 : 24 * 30;
+      return observation.metricId.includes('five-hour')
+        ? 5
+        : observation.metricId.includes('seven-day')
+          ? 168
+          : 24 * 30;
     case 'codex':
-      return observation.metricId.includes('five-hour') ? 5 : observation.metricId.includes('weekly') ? 168 : 24;
+      return observation.metricId.includes('five-hour')
+        ? 5
+        : observation.metricId.includes('weekly')
+          ? 168
+          : 24;
     case 'gemini-cli':
     case 'antigravity':
       return 24;
@@ -384,7 +401,7 @@ const getSupportedProviderDefaultWindowHours = (
 
 const buildClaudeObservations = (
   t: TFunction,
-  files: AuthFileItem[],
+  files: CredentialItem[],
   quotaMap: Record<string, ClaudeQuotaState>
 ): { observations: QuotaMetricObservation[]; loadedFiles: number; failedFiles: number } => {
   const observations: QuotaMetricObservation[] = [];
@@ -400,7 +417,9 @@ const buildClaudeObservations = (
       return;
     }
     (quota.windows || []).forEach((window: ClaudeQuotaWindow) => {
-      const remainingPercent = clampPercent(window.usedPercent === null ? null : 100 - window.usedPercent);
+      const remainingPercent = clampPercent(
+        window.usedPercent === null ? null : 100 - window.usedPercent
+      );
       if (remainingPercent === null) return;
       observations.push({
         fileName: file.name,
@@ -408,10 +427,16 @@ const buildClaudeObservations = (
         metricLabel: translateLabel(t, window.label, window.labelKey, undefined, window.id),
         remainingPercent,
         resetAt: window.resetAt,
-        windowHours: window.windowHours ?? getSupportedProviderDefaultWindowHours('claude', { metricId: window.id }),
+        windowHours:
+          window.windowHours ??
+          getSupportedProviderDefaultWindowHours('claude', { metricId: window.id }),
       });
     });
-    if (quota.extraUsage && quota.extraUsage.utilization !== null && quota.extraUsage.utilization !== undefined) {
+    if (
+      quota.extraUsage &&
+      quota.extraUsage.utilization !== null &&
+      quota.extraUsage.utilization !== undefined
+    ) {
       const remainingPercent = clampPercent(100 - quota.extraUsage.utilization);
       if (remainingPercent !== null) {
         observations.push({
@@ -430,7 +455,7 @@ const buildClaudeObservations = (
 
 const buildCodexObservations = (
   t: TFunction,
-  files: AuthFileItem[],
+  files: CredentialItem[],
   quotaMap: Record<string, CodexQuotaState>
 ) => {
   const observations: QuotaMetricObservation[] = [];
@@ -446,15 +471,25 @@ const buildCodexObservations = (
       return;
     }
     (quota.windows || []).forEach((window: CodexQuotaWindow) => {
-      const remainingPercent = clampPercent(window.usedPercent === null ? null : 100 - window.usedPercent);
+      const remainingPercent = clampPercent(
+        window.usedPercent === null ? null : 100 - window.usedPercent
+      );
       if (remainingPercent === null) return;
       observations.push({
         fileName: file.name,
         metricId: window.id,
-        metricLabel: translateLabel(t, window.label, window.labelKey, window.labelParams, window.id),
+        metricLabel: translateLabel(
+          t,
+          window.label,
+          window.labelKey,
+          window.labelParams,
+          window.id
+        ),
         remainingPercent,
         resetAt: window.resetAt,
-        windowHours: window.windowHours ?? getSupportedProviderDefaultWindowHours('codex', { metricId: window.id }),
+        windowHours:
+          window.windowHours ??
+          getSupportedProviderDefaultWindowHours('codex', { metricId: window.id }),
       });
     });
   });
@@ -464,7 +499,7 @@ const buildCodexObservations = (
 
 const buildAntigravityObservations = (
   t: TFunction,
-  files: AuthFileItem[],
+  files: CredentialItem[],
   quotaMap: Record<string, AntigravityQuotaState>
 ) => {
   const observations: QuotaMetricObservation[] = [];
@@ -489,7 +524,8 @@ const buildAntigravityObservations = (
         remainingPercent,
         resetAt: group.resetTime,
         windowHours:
-          group.windowHours ?? getSupportedProviderDefaultWindowHours('antigravity', { metricId: group.id }),
+          group.windowHours ??
+          getSupportedProviderDefaultWindowHours('antigravity', { metricId: group.id }),
       });
     });
   });
@@ -498,7 +534,7 @@ const buildAntigravityObservations = (
 };
 
 const buildGeminiCliObservations = (
-  files: AuthFileItem[],
+  files: CredentialItem[],
   quotaMap: Record<string, GeminiCliQuotaState>
 ) => {
   const observations: QuotaMetricObservation[] = [];
@@ -525,7 +561,8 @@ const buildGeminiCliObservations = (
         remainingPercent,
         resetAt: bucket.resetTime,
         windowHours:
-          bucket.windowHours ?? getSupportedProviderDefaultWindowHours('gemini-cli', { metricId: bucket.id }),
+          bucket.windowHours ??
+          getSupportedProviderDefaultWindowHours('gemini-cli', { metricId: bucket.id }),
       });
     });
   });
@@ -535,7 +572,7 @@ const buildGeminiCliObservations = (
 
 const buildKimiObservations = (
   t: TFunction,
-  files: AuthFileItem[],
+  files: CredentialItem[],
   quotaMap: Record<string, KimiQuotaState>
 ) => {
   const observations: QuotaMetricObservation[] = [];
@@ -560,7 +597,8 @@ const buildKimiObservations = (
         metricLabel: translateLabel(t, row.label, row.labelKey, row.labelParams, row.id),
         remainingPercent,
         resetAt: row.resetAt,
-        windowHours: row.windowHours ?? getSupportedProviderDefaultWindowHours('kimi', { metricId: row.id }),
+        windowHours:
+          row.windowHours ?? getSupportedProviderDefaultWindowHours('kimi', { metricId: row.id }),
       });
     });
   });
@@ -571,7 +609,7 @@ const buildKimiObservations = (
 const buildQuotaObservations = (
   t: TFunction,
   providerKey: SupportedQuotaProvider,
-  files: AuthFileItem[],
+  files: CredentialItem[],
   quotaMap: QuotaStateMap | undefined
 ) => {
   if (!quotaMap) {
@@ -584,7 +622,11 @@ const buildQuotaObservations = (
     case 'codex':
       return buildCodexObservations(t, files, quotaMap as Record<string, CodexQuotaState>);
     case 'antigravity':
-      return buildAntigravityObservations(t, files, quotaMap as Record<string, AntigravityQuotaState>);
+      return buildAntigravityObservations(
+        t,
+        files,
+        quotaMap as Record<string, AntigravityQuotaState>
+      );
     case 'gemini-cli':
       return buildGeminiCliObservations(files, quotaMap as Record<string, GeminiCliQuotaState>);
     case 'kimi':
@@ -713,23 +755,26 @@ const buildProviderWarnings = (
 export function buildProviderAnalytics(
   t: TFunction,
   providerKey: string,
-  files: AuthFileItem[],
+  files: CredentialItem[],
   allUsageDetails: UsageDetail[],
   quotaMap?: QuotaStateMap,
   thresholds: QuotaWarningThresholds = DEFAULT_QUOTA_WARNING_THRESHOLDS
 ): ProviderAnalytics {
-  const providerFiles = files.filter((file) => getProviderKey(file) === providerKey);
+  const providerFiles = files;
   const usageDetails = collectProviderUsage(providerFiles, allUsageDetails);
   const totalFiles = providerFiles.length;
   const disabledFiles = providerFiles.filter((file) => file.disabled === true).length;
   const unavailableFiles = providerFiles.filter((file) => file.unavailable === true).length;
   const activeFiles = Math.max(totalFiles - disabledFiles, 0);
   const windowStats = buildWindowStats(t, providerFiles, usageDetails);
-  const activePoolPercent7d = windowStats.find((window) => window.id === '7d')?.activePoolPercent ?? 0;
+  const activePoolPercent7d =
+    windowStats.find((window) => window.id === '7d')?.activePoolPercent ?? 0;
 
   if (!isSupportedQuotaProvider(providerKey)) {
-    const successRate7d = 100 - (windowStats.find((window) => window.id === '7d')?.failureRate ?? 0);
-    const availabilityRatio = activeFiles > 0 ? ((activeFiles - unavailableFiles) / activeFiles) * 100 : 100;
+    const successRate7d =
+      100 - (windowStats.find((window) => window.id === '7d')?.failureRate ?? 0);
+    const availabilityRatio =
+      activeFiles > 0 ? ((activeFiles - unavailableFiles) / activeFiles) * 100 : 100;
     const operationalHealth = clampPercent(availabilityRatio * 0.55 + successRate7d * 0.45);
 
     const result: ProviderAnalytics = {
@@ -766,8 +811,7 @@ export function buildProviderAnalytics(
   );
   const histogramDatasets = buildHistogramDatasets(observations);
   const remainingPercents = observations.map((item) => item.remainingPercent);
-  const conservativeHealth =
-    remainingPercents.length > 0 ? Math.min(...remainingPercents) : null;
+  const conservativeHealth = remainingPercents.length > 0 ? Math.min(...remainingPercents) : null;
   const averageHealth =
     remainingPercents.length > 0
       ? remainingPercents.reduce((sum, value) => sum + value, 0) / remainingPercents.length
@@ -801,11 +845,77 @@ export function buildProviderAnalytics(
         ? riskValues.reduce((sum, value) => sum + value, 0) / riskValues.length
         : null,
     avgDailyQuotaBurnPercent:
-      burnValues.length > 0 ? burnValues.reduce((sum, value) => sum + value, 0) / burnValues.length : null,
+      burnValues.length > 0
+        ? burnValues.reduce((sum, value) => sum + value, 0) / burnValues.length
+        : null,
     activePoolPercent7d,
     note: buildQuotaNote(t, loadedFiles, totalFiles, failedFiles),
     warnings: [],
   };
   result.warnings = buildProviderWarnings(t, result, thresholds);
+  return result;
+}
+
+export function buildProviderAnalyticsFromOverview(
+  t: TFunction,
+  providerKey: string,
+  overview: ProviderOverviewResponse,
+  thresholds: QuotaWarningThresholds = DEFAULT_QUOTA_WARNING_THRESHOLDS
+): ProviderAnalytics {
+  const result: ProviderAnalytics = {
+    providerKey,
+    mode: overview.mode === 'quota' ? 'quota' : 'usage-only',
+    totalFiles: overview.total_credentials,
+    activeFiles: overview.active_credentials,
+    disabledFiles: overview.disabled_credentials,
+    unavailableFiles: overview.unavailable_credentials,
+    loadedFiles: overview.loaded_credentials,
+    failedQuotaFiles: overview.failed_quota_credentials,
+    histogramLabels: overview.histogram_labels ?? [],
+    histogramDatasets: (overview.histogram_datasets ?? []).map((dataset) => ({
+      id: dataset.id,
+      label: dataset.label,
+      color: dataset.color,
+      counts: dataset.counts ?? [],
+      averageRemaining: dataset.average_remaining ?? null,
+      bucketItems:
+        dataset.bucket_items?.map((items) =>
+          (items ?? []).map((item) => ({
+            credentialId: item.credential_id,
+            fileName: item.credential_name ?? item.credential_id,
+            remainingPercent: item.remaining_percent,
+            resetAt: item.reset_at ?? undefined,
+          }))
+        ) ?? [],
+    })),
+    windowStats: (overview.window_stats ?? []).map((window) => ({
+      id: window.id,
+      label: window.label,
+      requestCount: window.request_count,
+      tokenCount: window.token_count,
+      failureCount: window.failure_count,
+      failureRate: window.failure_rate,
+      activeCredentialCount: window.active_credential_count,
+      activePoolPercent: window.active_pool_percent,
+      avgDailyRequests: window.avg_daily_requests,
+      avgDailyTokens: window.avg_daily_tokens,
+    })),
+    conservativeHealth: overview.conservative_health ?? null,
+    averageHealth: overview.average_health ?? null,
+    operationalHealth: overview.operational_health ?? null,
+    conservativeRiskDays: overview.conservative_risk_days ?? null,
+    averageRiskDays: overview.average_risk_days ?? null,
+    avgDailyQuotaBurnPercent: overview.avg_daily_quota_burn_percent ?? null,
+    activePoolPercent7d: overview.active_pool_percent_7d ?? 0,
+    note: overview.note,
+    warnings: (overview.warnings ?? []).map((warning) => ({
+      id: warning.id,
+      level: warning.level === 'danger' ? 'danger' : 'warning',
+      message: warning.message,
+    })),
+  };
+  if (result.warnings.length === 0) {
+    result.warnings = buildProviderWarnings(t, result, thresholds);
+  }
   return result;
 }

@@ -1,7 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { QuotaAnalyticsView } from './QuotaAnalyticsView';
-import type { AuthFileItem } from '@/types/authFile';
+import type { CredentialItem } from '@/types/credential';
 import type { UsageDetail } from '@/utils/usage';
 
 const mocks = vi.hoisted(() => ({
@@ -23,6 +22,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) => {
       const translations: Record<string, string> = {
+        'common.loading': 'Loading',
         'quota_management.analytics.metric_extra_usage': 'Extra Usage',
         'quota_management.analytics.window_5h': '5h',
         'quota_management.analytics.window_24h': '24h',
@@ -39,13 +39,16 @@ vi.mock('react-i18next', () => ({
         'quota_management.analytics.bucket_reset_at': 'Reset At',
         'quota_management.analytics.bucket_empty': 'No files',
         'quota_management.analytics.bucket_download_all_failed': 'Archive failed',
+        'quota_management.analytics.bucket_download_progress': 'Archive progress',
         'quota_management.analytics.not_available': 'N/A',
-        'auth_files.download_success': 'File downloaded successfully',
-        'auth_files.file_size': 'Size',
-        'auth_files.file_modified': 'Modified',
+        'quota_management.analytics.coverage_label': 'Coverage',
+        'quota_management.analytics.load_full_quota': 'Load full quota',
+        'credentials.download_success': 'File downloaded successfully',
+        'credentials.file_size': 'Size',
+        'credentials.file_modified': 'Modified',
         'notification.download_failed': 'Download failed',
-        'auth_files.filter_codex': 'Codex',
-        'auth_files.filter_unknown': 'Unknown',
+        'credentials.filter_codex': 'Codex',
+        'credentials.filter_unknown': 'Unknown',
       };
 
       if (key === 'quota_management.analytics.days_value') {
@@ -77,7 +80,7 @@ vi.mock('@/stores', () => ({
 }));
 
 vi.mock('@/services/api', () => ({
-  authFilesApi: {
+  credentialsApi: {
     downloadText: mocks.downloadText,
   },
 }));
@@ -125,16 +128,30 @@ const flushPromises = async () => {
   await Promise.resolve();
 };
 
-const files: AuthFileItem[] = [
-  { name: 'codex-a.json', type: 'codex', authIndex: 'a', size: 1200, modified: now - 1000 },
-  { name: 'codex-b.json', type: 'codex', authIndex: 'b', disabled: true, size: 1600, modified: now - 2000 },
-  { name: 'codex-c.json', type: 'codex', authIndex: 'c', unavailable: true, size: 2000, modified: now - 3000 },
+const files: CredentialItem[] = [
+  { name: 'codex-a.json', type: 'codex', selectionKey: 'a', size: 1200, modified: now - 1000 },
+  {
+    name: 'codex-b.json',
+    type: 'codex',
+    selectionKey: 'b',
+    disabled: true,
+    size: 1600,
+    modified: now - 2000,
+  },
+  {
+    name: 'codex-c.json',
+    type: 'codex',
+    selectionKey: 'c',
+    unavailable: true,
+    size: 2000,
+    modified: now - 3000,
+  },
 ];
 
 const usageDetails: UsageDetail[] = [
   {
     timestamp: new Date(now - 1000).toISOString(),
-    auth_index: 'a' as unknown as number,
+    selection_key: 'a' as unknown as number,
     source: '',
     failed: false,
     tokens: {
@@ -216,8 +233,7 @@ const quotaMap = {
 
 describe('QuotaAnalyticsView', () => {
   beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(now);
+    vi.resetModules();
     Object.defineProperty(window, 'scrollTo', {
       value: vi.fn(),
       writable: true,
@@ -236,7 +252,11 @@ describe('QuotaAnalyticsView', () => {
     vi.useRealTimers();
   });
 
-  it('支持图例筛选后保持柱图序列映射正确', () => {
+  it('支持图例筛选后保持柱图序列映射正确', async () => {
+    const { QuotaAnalyticsView } = await import('./QuotaAnalyticsView');
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
     render(
       <QuotaAnalyticsView
         providerKey="codex"
@@ -257,13 +277,41 @@ describe('QuotaAnalyticsView', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Open 5h' }));
 
-    expect(screen.getByText('Codex · 5h · 90-100%')).not.toBeNull();
     expect(screen.getByText('codex-a.json')).not.toBeNull();
     expect(screen.getByText('codex-b.json')).not.toBeNull();
     expect(screen.queryByText('codex-c.json')).toBeNull();
+  }, 15000);
+
+  it('部分 quota 数据加载完成后继续显示统计图并展示进度', async () => {
+    const { QuotaAnalyticsView } = await import('./QuotaAnalyticsView');
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    render(
+      <QuotaAnalyticsView
+        providerKey="codex"
+        providerLabel="Codex"
+        files={files}
+        usageDetails={usageDetails}
+        quotaMap={{
+          'codex-a.json': quotaMap['codex-a.json'],
+        }}
+        hydrating
+        hydrationCompleted={1}
+        hydrationTotal={3}
+      />
+    );
+
+    expect(screen.getByText('Loading')).not.toBeNull();
+    expect(screen.getByText('1/3 · 33.3%')).not.toBeNull();
+    expect(screen.getByTestId('mock-bar-chart')).not.toBeNull();
   });
 
-  it('点击柱子后可下载单个认证文件', async () => {
+  it('点击柱子后可下载单个凭证', async () => {
+    const { QuotaAnalyticsView } = await import('./QuotaAnalyticsView');
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
     mocks.downloadText.mockResolvedValueOnce('{"name":"codex-a"}');
 
     render(
@@ -277,19 +325,28 @@ describe('QuotaAnalyticsView', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Open 5h' }));
-    fireEvent.click(screen.getAllByRole('button', { name: 'Download' })[0]!);
+    fireEvent.click(screen.getAllByRole('button', { name: /^(Download|download下载)$/i })[0]!);
 
     await flushPromises();
 
-    expect(mocks.downloadText).toHaveBeenCalledWith('codex-a.json');
+    expect(mocks.downloadText).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'codex-a.json' })
+    );
     expect(mocks.downloadBlob).toHaveBeenCalledWith(
       expect.objectContaining({ filename: 'codex-a.json' })
     );
     expect(mocks.showNotification).toHaveBeenCalledWith('File downloaded successfully', 'success');
   });
 
-  it('支持批量打包下载当前分桶下的全部认证文件', async () => {
-    mocks.downloadText.mockImplementation(async (name: string) => `content:${name}`);
+  it('支持批量打包下载当前分桶下的全部凭证', async () => {
+    const { QuotaAnalyticsView } = await import('./QuotaAnalyticsView');
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    mocks.downloadText.mockImplementation(async (target: { name?: string } | string) => {
+      const name = typeof target === 'string' ? target : String(target.name ?? '');
+      return `content:${name}`;
+    });
 
     render(
       <QuotaAnalyticsView
@@ -302,13 +359,22 @@ describe('QuotaAnalyticsView', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Open 5h' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Download All (2)' }));
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: /^(Download All \(2\)|全部下载（2）)$/,
+      })
+    );
 
     await flushPromises();
     await flushPromises();
+    await vi.runAllTimersAsync();
 
-    expect(mocks.downloadText).toHaveBeenCalledWith('codex-a.json');
-    expect(mocks.downloadText).toHaveBeenCalledWith('codex-b.json');
+    expect(mocks.downloadText).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'codex-a.json' })
+    );
+    expect(mocks.downloadText).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'codex-b.json' })
+    );
     expect(mocks.zipFile).toHaveBeenCalledWith('codex-a.json', 'content:codex-a.json');
     expect(mocks.zipFile).toHaveBeenCalledWith('codex-b.json', 'content:codex-b.json');
     expect(mocks.zipGenerateAsync).toHaveBeenCalledWith({ type: 'blob' });

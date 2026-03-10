@@ -4,7 +4,7 @@ import { buildUsageExportFilename, buildUsageImportPreview } from './usageImport
 describe('usageImportPreview', () => {
   it('从 usage 导出快照里提取预览信息', () => {
     const preview = buildUsageImportPreview('usage.json', {
-      version: 1,
+      version: 2,
       exported_at: '2026-03-08T10:00:00.000Z',
       usage: {
         total_requests: 12,
@@ -29,7 +29,7 @@ describe('usageImportPreview', () => {
     expect(preview).toEqual({
       fileName: 'usage.json',
       payload: expect.any(Object),
-      version: 1,
+      version: 2,
       exportedAt: '2026-03-08T10:00:00.000Z',
       totalRequests: 12,
       failureCount: 3,

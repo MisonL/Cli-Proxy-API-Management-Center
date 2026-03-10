@@ -1,8 +1,8 @@
 /**
- * Resolver functions for extracting data from auth files.
+ * Resolver functions for extracting data from credential files.
  */
 
-import type { AuthFileItem } from '@/types';
+import type { CredentialItem } from '@/types';
 import {
   normalizeStringValue,
   normalizePlanType,
@@ -15,7 +15,7 @@ export function extractCodexChatgptAccountId(value: unknown): string | null {
   return normalizeStringValue(payload.chatgpt_account_id ?? payload.chatgptAccountId);
 }
 
-export function resolveCodexChatgptAccountId(file: AuthFileItem): string | null {
+export function resolveCodexChatgptAccountId(file: CredentialItem): string | null {
   const metadata =
     file && typeof file.metadata === 'object' && file.metadata !== null
       ? (file.metadata as Record<string, unknown>)
@@ -35,7 +35,7 @@ export function resolveCodexChatgptAccountId(file: AuthFileItem): string | null 
   return null;
 }
 
-export function resolveCodexPlanType(file: AuthFileItem): string | null {
+export function resolveCodexPlanType(file: CredentialItem): string | null {
   const metadata =
     file && typeof file.metadata === 'object' && file.metadata !== null
       ? (file.metadata as Record<string, unknown>)
@@ -86,7 +86,7 @@ export function extractGeminiCliProjectId(value: unknown): string | null {
   return candidate ? candidate : null;
 }
 
-export function resolveGeminiCliProjectId(file: AuthFileItem): string | null {
+export function resolveGeminiCliProjectId(file: CredentialItem): string | null {
   const metadata =
     file && typeof file.metadata === 'object' && file.metadata !== null
       ? (file.metadata as Record<string, unknown>)

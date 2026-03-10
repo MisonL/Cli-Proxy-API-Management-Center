@@ -8,7 +8,7 @@ export * from './config';
 export * from './auth';
 export * from './provider';
 export * from './ampcode';
-export * from './authFile';
+export * from './credential';
 export * from './oauth';
 export * from './usage';
 export * from './log';
